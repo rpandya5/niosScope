@@ -34,7 +34,23 @@ int murder_me[XMAX] = {0};
 #define RED 0xFF0000
 #define WHITE 0xFFFFFF
 	
+//STUPID STUFF FOR SIMULATING ADC////
+#include <math.h>
+
+#define NUM_SAMPLES 320
+#define PI 3.14159265358979323846
+float sine_wave[NUM_SAMPLES];
+/////////////////////////////////////
+
 int main(void){
+    // Generate sine wave values
+    for (int i = 0; i < NUM_SAMPLES; i++) {
+        float x = (20.0 * PI * i) / NUM_SAMPLES;
+        sine_wave[i] = 100.0*sin(x);
+    }
+	
+	
+	
     volatile int * pixel_ctrl_ptr = (int *)0xFF203020;
     // declare other variables(not shown)
     // initialize location and direction of rectangles(not shown)
@@ -57,9 +73,9 @@ int main(void){
         // code for drawing the boxes and lines (not shown)
         // code for updating the locations of boxes (not shown)
 		update(&points);
-		murder();
+		//murder();
 		background();
-		draw(&squares);
+		//draw(&squares);
 
         wait_for_vsync(); // swap front and back buffers on VGA vertical sync
         pixel_buffer_start = *(pixel_ctrl_ptr + 1); // new back buffer
@@ -179,6 +195,24 @@ void draw_line(int x0, int y0, int x1, int y1, short int line_color){
 }
 
 
+void draw_ADC_line(int x0, float y0, int x1, float y1, short int line_color){
+	float deltaY = y1 - y0;
+	
+	if (deltaY == 0){plot_pixel(x0, y0, line_color);}
+	else if (deltaY > 0){
+		for (int i = 0; i <= deltaY; i++){
+			//plot_pixel(x0, y0+i, line_color);
+			plot_pixel(x0, (floor(y0+i) + ceil(y0+i))/2, line_color);			
+		}
+	}else{
+		for (int i = 0; i <= abs(deltaY); i++){
+			plot_pixel(x0, (floor(y0-i) + ceil(y0-i))/2, line_color);			
+		}
+	
+	}
+}
+
+
 void background(){
 	draw_line(0, YMAX/2, XMAX-1, YMAX/2, GRAY);
 	draw_line(0, YMAX/2+1, XMAX-1, YMAX/2+1, GRAY);
@@ -196,33 +230,39 @@ void background(){
 	}
 }
 
+void recursive_draw(int i, int step){
+
+	if ((YMAX/2+sine_wave[i+step]*100)==(YMAX/2+sine_wave[i]*100)){return recursive_draw(i, step+1);}
+	if(i+step >=NUM_SAMPLES){return;}
+	draw_line(i, YMAX/2+sine_wave[i], i+step, YMAX/2+sine_wave[i+step], WHITE);
+	
+}
+
 void update(int* change_me){
-	for (int i = 0; i< XMAX; i++){
-		if (i == 0){
-			change_me[0] = graphic_buffer_get(); //ADD NORMALIZER
-		} else{
-			change_me[1] = change_me[0];
-			change_me[0] = graphic_buffer_get();
-			draw_line(i-1, change_me[0], i, change_me[1], WHITE);
-		}
-	
-	
-	
+	int step = 1;
+	for (int i = 1; i< XMAX; i+=step){
+		draw_line(i-step, YMAX/2+sine_wave[i-step], i, YMAX/2+sine_wave[i], WHITE);
 	}
-	if (change_me[0] == 0 && change_me[1] == 0){
-		change_me[1] = graphic_buffer_get(); //ADD NORMALIZER
-	}else{
-		change_me[3] == change_me[1];
-		change_me[2] == change_me[0];
-		change_me[1] = buffer_get();
-		change_me[0] = change_me[0]+1;
+	step = 5;
+	for (int i = 1; i< XMAX; i+=step){
 		
+		if (sine_wave[i-1] - sine_wave[i] > 10){
+		draw_line(i-step, YMAX/2+sine_wave[i-step], i, YMAX/2+sine_wave[i], WHITE);
+		}
+		}
+	for (int i = 0; i< XMAX; i+=1){
+		//if (i == 0){
+			//change_me[0] = graphic_buffer_get(); //ADD NORMALIZER
+		//} else{
+			//change_me[1] = change_me[0];
+			//change_me[0] = graphic_buffer_get();
+			//draw_line(i-1, change_me[0], i, change_me[1], WHITE);
+		//}
+		
+		
+		
+		plot_pixel(i, YMAX/2.0+sine_wave[i], WHITE);
 	
-	
-	}
-	
-	murder_me[i*2] = temp[i*2]; 
-	murder_me[i*2+1] = temp[i*2+1];
 	}
 
 	}
@@ -241,25 +281,4 @@ void murder(){
 			draw_line(*(murder_me+j*2), *(murder_me+j*2+1), *(murder_me), *(murder_me+1), 0);
 		}
 	}
-}
-
-void draw(int*draw_me){	
-	for (int i = 0; i< 8; i++){
-
-		
-		for (int j = -2; j < 3; j++){
-			for (int k = -2; k < 3; k++){
-				plot_pixel(*(draw_me+i*5)+j,*(draw_me+i*5+1)+k,*(draw_me+i*5+2));	
-			}
-		}
-		
-		
-		if(i<7){
-			draw_line(*(draw_me+i*5), *(draw_me+i*5+1), *(draw_me+(i+1)*5), *(draw_me+(i+1)*5+1), *(draw_me+i*5+2));
-		} else{
-			draw_line(*(draw_me+i*5), *(draw_me+i*5+1), *(draw_me), *(draw_me+1), *(draw_me+i*5+2));
-		}
-	}
-
-
 }
