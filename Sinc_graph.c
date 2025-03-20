@@ -843,11 +843,12 @@ int main(void){
             }
         }
     }*/
-	
     while (1)
     {
 		*(LEDs)=0x1;
+    	clear_screen(); // pixel_buffer_start points to the pixel buffer
 		update();
+		//compress();
         // code for drawing the boxes and lines (not shown)
         // code for updating the locations of boxes (not shown)
         wait_for_vsync(); // swap front and back buffers on VGA vertical sync
@@ -886,10 +887,28 @@ void update(){
 	for (int i=0; i < 766; i++){
 		plot_pixel(points[i][0],points[i][1], WHITE);
 	}
-	
+
+	for (int i=0; i < 766; i++){
+		plot_pixel(points[i][0]/2+XMAX/4,points[i][1], RED);
+	}
+	for (int i=0; i < 766; i++){
+		// the linear offset I believe is needed because of rounding errors, I think I will need a second list for the larger SINC
+		plot_pixel(points[i][0]*2+XMAX+30,points[i][1], BLUE);
+	}
 	/*for(int i=0; i<XMAX; i++){
 		plot_pixel(i, YMAX/2+50 - 150.0*sinc(XMAX/2-i), WHITE);
 	}*/
 
+
+}
+
+void compress(){
+	for (int i = 0; i<(766/2); i++){
+		//points[i+1][0] = points[i][0];
+		points[766/2 - i+1][1] = points[766/2 - i][1];
+		//points[i+766/2][0] = points[i+766/2+1][0];
+		points[i+766/2][1] = points[i+766/2+1][1];
+	
+	}
 
 }
