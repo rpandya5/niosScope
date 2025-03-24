@@ -1,6 +1,5 @@
 #include <stdlib.h>
 #include <stdio.h>
-#include <math.h>
 
 
 volatile int* LEDs = 0xFF200000;
@@ -363,10 +362,6 @@ void plot_pixel(int x, int y, short int line_color);
 void plot_point(int x, int y, short int line_color);
 void draw_line(int x0, int y0, int x1, int y1, short int line_color);
 void background();
-float sinc(float r) {
-    return (r == 0) ? 1.0 : sin(M_PI * r) / (M_PI * r);
-}
-
 int main(void){
 	*(ADC_ptr + 1) = 0xFFFFFFFF;  // sets the ADC up to automatically perform conversion
     volatile int * pixel_ctrl_ptr = (int *)0xFF203020;
