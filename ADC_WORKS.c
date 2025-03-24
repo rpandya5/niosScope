@@ -358,10 +358,14 @@ int points[321][2]={
 ; // Array to store (x, y) coordinates
 int count = 0;
 
-void plot_pixel(int x, int y, short int line_color);
-void plot_point(int x, int y, short int line_color);
-void draw_line(int x0, int y0, int x1, int y1, short int line_color);
+void plot_pixel(int x, int y, int line_color);
+void plot_point(int x, int y, int line_color);
+void draw_line(int x0, int y0, int x1, int y1, int line_color);
 void background();
+void clear_screen();
+void update();
+
+
 int main(void){
 	*(ADC_ptr + 1) = 0xFFFFFFFF;  // sets the ADC up to automatically perform conversion
     volatile int * pixel_ctrl_ptr = (int *)0xFF203020;
@@ -395,9 +399,9 @@ int main(void){
 
 // code for subroutines (not shown)
 
-void plot_pixel(int x, int y, short int line_color)
+void plot_pixel(int x, int y, int line_color)
 {
-    volatile short int *one_pixel_address;
+    volatile int *one_pixel_address;
 
         one_pixel_address = pixel_buffer_start + (y << 10) + (x << 1);
 
@@ -412,7 +416,7 @@ void clear_screen(){
 	}
 }
 
-void draw_line(int x0, int y0, int x1, int y1, short int line_color){
+void draw_line(int x0, int y0, int x1, int y1, int line_color){
 	int deltaX = x1 - x0;
 	int deltaY = y1 - y0;
 	
@@ -445,7 +449,7 @@ void draw_line(int x0, int y0, int x1, int y1, short int line_color){
 }
 
 
-void plot_point(int x, int y, short int line_color){
+void plot_point(int x, int y, int line_color){
 	if (abs(y)<YMAX/2){
 		plot_pixel(x, YMAX/2-y, line_color);
 	}
