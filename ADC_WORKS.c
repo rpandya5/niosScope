@@ -5,7 +5,7 @@
 volatile int* LEDs = 0xFF200000;
 
 volatile int* BUTTON = 0xFF200050;
-volatile int pixel_buffer_start; // global variable
+volatile int pixel_buffer_start = 0x08000000; // global variable
 
 
 #define XMAX 320
@@ -21,11 +21,6 @@ volatile int *ADC_ptr = (int *)ADC_BASE;
 #define WHITE 0xFFFFFF
 #define BLACK 0
 
-#define ORIGIN_X XMAX/2
-#define ORIGIN_Y YMAX/2
-#define SCALE 10.0  // Controls the spread of the sinc function
-#define THRESHOLD 1.0  // Minimum intensity to consider a point
-#define MAX_POINTS (XMAX * YMAX) // Maximum possible points
 
 int SAMPLE_RATE = 5;
 
@@ -364,14 +359,18 @@ void draw_line(int x0, int y0, int x1, int y1, int line_color);
 void background();
 void clear_screen();
 void update();
+void display_freq(int value);
+
+
+void display_amplitude(float value);
 
 
 int main(void){
 	*(ADC_ptr + 1) = 0xFFFFFFFF;  // sets the ADC up to automatically perform conversion
-    volatile int * pixel_ctrl_ptr = (int *)0xFF203020;
 	*(BUTTON+3) = 0b1111;
-    pixel_buffer_start = *(pixel_ctrl_ptr); // we draw on the back buffer
     clear_screen(); // pixel_buffer_start points to the pixel buffer
+	background();
+
     while (1)
     {
 		*LEDs = SAMPLE_RATE;
@@ -386,6 +385,7 @@ int main(void){
 	update();
 	background();
 	for(int i=0; i<XMAX-1; i++){
+		draw_line(i, YMAX/2 - delete_wave[i], i+1, YMAX/2 - delete_wave[i+1], BLACK);
 		draw_line(i, YMAX/2 - final_wave[i], i+1, YMAX/2 - final_wave[i+1], WHITE);
 		delete_wave[i] = final_wave[i];
 		final_wave[i] = 0;
@@ -393,6 +393,8 @@ int main(void){
 	}
 		delete_wave[XMAX-1] = final_wave[XMAX-1];
 		final_wave[XMAX-1] = 0;
+        display_freq(0);
+        display_amplitude(0.0);
     	}
 	return 0;
 }
@@ -408,7 +410,17 @@ void plot_pixel(int x, int y, int line_color)
         *one_pixel_address = line_color;
 }
 
+void plot_character(int x, int y, char c){
+    volatile char* character_buffer = (char*) (0x09000000+(y<<7)+x);
+    *character_buffer = c;
+}
+
 void clear_screen(){
+	for (int i=0; i<60; i++){
+		for(int j=0; j<80; j++){
+			plot_character(i,j,' ');	
+		}
+	}
 	for (int i=0; i<XMAX; i++){
 		for(int j=0; j<YMAX; j++){
 			plot_pixel(i,j,0);	
@@ -466,13 +478,25 @@ void plot_shifted_sinc(int shift, float amplitude){
 
 
 }
+void display_freq(int value){
+    int display_value = value;
+    plot_character(15, 58, '0'+display_value%10);
+    display_value/=10;
+    plot_character(16, 58, '0'+display_value%10);
+    display_value/=10;
+    plot_character(17, 58, '0'+display_value%10);
+}
 
+void display_amplitude(float value){
+    int display_value = value*100;
+    plot_character(4, 58, '0'+display_value%10);
+    display_value/=10;
+    plot_character(6, 58, '0'+display_value%10);
+    display_value/=10;
+    plot_character(7, 58, '0'+display_value%10);
+}
 
 void background(){
-	for(int i=0; i<XMAX-1; i++){
-		draw_line(i, YMAX/2 - delete_wave[i], i+1, YMAX/2 - delete_wave[i+1], BLACK);
-
-	}
 	draw_line(0, YMAX/2, XMAX-1, YMAX/2, GRAY);
 	draw_line(0, YMAX/2+1, XMAX-1, YMAX/2+1, GRAY);
 	draw_line(0, YMAX/2-1, XMAX-1, YMAX/2-1, GRAY);
@@ -487,6 +511,25 @@ void background(){
 	for (int i = 0; i < YMAX-1; i=i+10){
 		draw_line(0, i, XMAX-1, i, GRAY);
 	}
+
+    plot_character(0, 58, 'A');
+    plot_character(1, 58, 'M');
+    plot_character(2, 58, 'P');
+    plot_character(3, 58, '=');
+    plot_character(5, 58, '.');
+    //AMP=0.00V
+
+    plot_character(8, 58, 'V');
+
+    plot_character(10, 58, 'F');
+    plot_character(11, 58, 'R');
+    plot_character(12, 58, 'E');
+    plot_character(13, 58, 'Q');
+    plot_character(14, 58, '=');
+
+
+    plot_character(18, 58, 'H');
+    plot_character(19, 58, 'z');
 }
 
 
