@@ -1,5 +1,7 @@
 /* April 1st, 9 am, I incorporated the interrupts for the timer and the pushbuttons
 */
+/* March 31st, 10:30 pm, I incorporated the interrupts for the timer and the pushbuttons
+*/
 
 #include <math.h>
 #include <stdbool.h>
@@ -128,13 +130,13 @@ int main(void) {
 	update_timer(SAMPLE_RATE);
 	//*(KEY_ptr + 2) = 0x3; // enable interrupts for all pushbuttons
 	*(KEY_ptr + 2) = 0xF; // write to the pushbutton interrupt mask register
-	 __builtin_wrctl(3, 0b1);
+	 __builtin_wrctl(3, 0b11);
 	__builtin_wrctl(0, 1); // enable Nios II interrupts
   *(ADC_ptr + 1) = 0xFFFFFFFF;
 	*LEDs = 0;
 
   while (1) {
-	//*LEDs = index;
+	*LEDs = index;
   }
 
   return 0;
@@ -152,7 +154,7 @@ void interrupt_handler(void) {
 	ipending = __builtin_rdctl(4);
 		
 	if (ipending & 0x1){get_samples();}
-	else{pushbutton_ISR( );}
+	if (ipending & 0x2){pushbutton_ISR( );}
 	return;
 }
 
@@ -169,10 +171,10 @@ void pushbutton_ISR(){
 	press = *(KEY_ptr + 3); // read the pushbutton interrupt register
 	*(KEY_ptr + 3) = press; // clear the interrupt
 	if (press & 0x1){
-		SAMPLE_RATE = (SAMPLE_RATE < 20) ? SAMPLE_RATE * 2 : SAMPLE_RATE;
+		SAMPLE_RATE *=2;
+		//SAMPLE_RATE = (SAMPLE_RATE&(1<<31)) ? SAMPLE_RATE * 2 : SAMPLE_RATE;
 		update_timer(SAMPLE_RATE);}
 	else if (press & 0x2) {
-		*LEDs = 0xF;
 		SAMPLE_RATE = (SAMPLE_RATE > 1) ? SAMPLE_RATE / 2 : SAMPLE_RATE;
 		update_timer(SAMPLE_RATE);}
 	else if (press & 0x4){TRIGGER++;}
