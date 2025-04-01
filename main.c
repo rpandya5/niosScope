@@ -439,6 +439,7 @@ void background(){
 			plot_character(26, 58, '0'+(sample_time_seconds /10)%10);
 			plot_character(27, 58, '0'+(sample_time_seconds)%10);
 			plot_character(29, 58, 's');
+			plot_character(29, 58, ' ');
 		}
 	}
 }
@@ -507,8 +508,7 @@ void pushbutton_ISR() {
   press = *(KEY_ptr + 3);  // read the pushbutton interrupt register
   *(KEY_ptr + 3) = press;  // clear the interrupt
   if (press & 0x1) {
-    SAMPLE_RATE *= 2;
-    // SAMPLE_RATE = (SAMPLE_RATE&(1<<31)) ? SAMPLE_RATE * 2 : SAMPLE_RATE;
+    SAMPLE_RATE = ((SAMPLE_RATE&(1<<30))==0) ? SAMPLE_RATE * 2 : SAMPLE_RATE;
     update_timer(SAMPLE_RATE);
   } else if (press & 0x2) {
     SAMPLE_RATE = (SAMPLE_RATE > 1) ? SAMPLE_RATE / 2 : SAMPLE_RATE;
