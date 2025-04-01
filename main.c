@@ -1,4 +1,4 @@
-/* updated as of april 1 9:30 am. integrates adc, circular buffer, hardware based
+/* updated as of april 1 10:06 am. integrates circular buffer, hardware based
 timer, isrs
 
 GENERAL STRUCTURE IS:
@@ -7,8 +7,10 @@ GENERAL STRUCTURE IS:
 every SAMPLING_RATE time, it reads the value of the adc and adds to
 raw_adc_samples[] which is of size ADC_BUFFER_SIZE. all of this added to the
 circular buffer
-- chunks being sent to different subfunctions not integrated yet
-*/
+- basic measurement functions incorporated. averaging measurements not
+incorporated yet
+
+ALSO IDK IF THIS COMPILES PLS CHECK*/
 
 #include <math.h>
 #include <stdbool.h>
@@ -38,21 +40,23 @@ volatile int* interval_timer_ptr =
     (int*)TIMER_BASE;  // interal timer base address
 
 // MANUALLY SET SETTINGS
-int SAMPLE_RATE = 5000000;
 int TRIGGER = 3;
+int SAMPLE_RATE = 500000;  // THE LTC2308 HAS max 500kHz freq
 
 // TRIGGER VARIABLES
 bool trigger_mode_active = true;
 bool trigger_hold = false;
 
-extern float raw_adc_samples[ADC_BUFFER_SIZE];
-extern int adc_sample_count;
+float raw_adc_samples[ADC_BUFFER_SIZE];
+int adc_sample_count = 0;
 extern void buffer_to_measurements(void);
 
 // ALL FUNCTION PROTOTYPES
+// old maybe remove
 unsigned int buffer_get(void);
 void process_available_samples(void);
 
+// basic inputs, isrs, buffers
 void interrupt_handler();
 void get_samples();
 void pushbutton_ISR();
@@ -148,6 +152,21 @@ void the_exception(void) {
   asm("eret");
 }
 
+// measurements
+float calc_dc_offset(const float* raw_adc_samples, int adc_sample_count);
+float find_rising_crossing(const float* raw_adc_samples, int adc_sample_count,
+                           float threshold, int start_index);
+float find_falling_crossing(const float* raw_adc_samples, int adc_sample_count,
+                            float threshold, int start_index);
+void find_min_max(const float* raw_adc_samples, int adc_sample_count,
+                  float* min_val, float* max_val);
+float calc_vpp(const float* raw_adc_samples, int adc_sample_count);
+float calc_rms(const float* raw_adc_samples, int adc_sample_count,
+               float dc_offset);
+float calc_frequency(int period_samples);  // check the input of tihs
+void calc_rise_fall_time(const float* raw_adc_samples, int adc_sample_count,
+                         float* rise_time, float* fall_time);
+
 int main(void) {
   update_timer(SAMPLE_RATE);
   //*(KEY_ptr + 2) = 0x3; // enable interrupts for all pushbuttons
@@ -213,6 +232,159 @@ void pushbutton_ISR() {
     TRIGGER = (TRIGGER > 0) ? TRIGGER - 1 : 0;
   }
   return;
+}
+
+/////// MEASUREMENT FUNCTIONS ////////
+
+// FIND THE DC OFFSET
+float calc_dc_offset(const float* raw_adc_samples, int adc_sample_count) {
+  // find the average value (sum / count) to find out centre point of signal
+
+  if (adc_sample_count <= 0) return 0.0f;
+  double sum = 0.0;
+  for (int i = 0; i < adc_sample_count; i++) {
+    sum += raw_adc_samples[i];
+  }
+  return (float)(sum / adc_sample_count);
+}
+
+/* FIND RISING CROSSING
+rising crossing is when signal crosses the centre point (dc offset) */
+
+float find_rising_crossing(const float* raw_adc_samples, int adc_sample_count,
+                           float threshold, int start_index) {
+  // returns the first point where the signal crosses the threshold value (dc
+  // offset)
+  for (int i = start_index; i < adc_sample_count - 1; i++) {
+    if (raw_adc_samples[i] < threshold && raw_adc_samples[i + 1] >= threshold) {
+      float delta = raw_adc_samples[i + 1] - raw_adc_samples[i];
+      if (delta == 0) return i;  // Avoid division by zero
+      float fraction = (threshold - raw_adc_samples[i]) / delta;
+      return i + fraction;
+    }
+  }
+  return -1.0f;
+}
+
+// FIND FALLING CROSSING
+float find_falling_crossing(const float* raw_adc_samples, int adc_sample_count,
+                            float threshold, int start_index) {
+  for (int i = start_index; i < adc_sample_count - 1; i++) {
+    if (raw_adc_samples[i] >= threshold && raw_adc_samples[i + 1] < threshold) {
+      float delta = raw_adc_samples[i] - raw_adc_samples[i + 1];
+      if (delta == 0) return i;
+      float fraction = (raw_adc_samples[i] - threshold) / delta;
+      return i + fraction;
+    }
+  }
+  return -1.0f;
+}
+
+// MIN / MAX VALUES
+void find_min_max(const float* raw_adc_samples, int adc_sample_count,
+                  float* min_val, float* max_val) {
+  if (adc_sample_count <= 0) {  // no samples
+    *min_val = 0.0f;
+    *max_val = 0.0f;
+    return;
+  }
+
+  *min_val = raw_adc_samples[0];
+  *max_val = raw_adc_samples[0];
+
+  for (int i = 1; i < adc_sample_count; i++) {
+    if (raw_adc_samples[i] > *max_val) *max_val = raw_adc_samples[i];
+    if (raw_adc_samples[i] < *min_val) *min_val = raw_adc_samples[i];
+  }
+}
+
+float calc_vpp(const float* raw_adc_samples, int adc_sample_count) {
+  // vpp = max - min
+  if (adc_sample_count <= 0) return 0.0f;  // no samples
+
+  float min_val, max_val;
+  find_min_max(raw_adc_samples, adc_sample_count, &min_val, &max_val);
+
+  return max_val - min_val;
+}
+
+// RMS VOLTAGE
+float calc_rms(const float* raw_adc_samples, int adc_sample_count,
+               float dc_offset) {
+  // Vrms = ((Vi^2) / count)^0.5 - WORKS FOR ALL NOT JUST SINE WAVES
+
+  if (adc_sample_count <= 0) return 0.0f;  // no samples
+
+  double sum_sq = 0.0;
+  for (int i = 0; i < adc_sample_count; i++) {
+    float ac = raw_adc_samples[i] - dc_offset;
+    sum_sq += ac * ac;
+  }
+  return (float)sqrt(sum_sq / adc_sample_count);
+}
+
+float calc_frequency(int period_samples) {  // # of samples in 1 period
+  // f = 1 / T = 1 / (period samples / sampling rate)
+
+  if (period_samples <= 0) return 0.0f;              // no samples
+  float period_time = period_samples / SAMPLE_RATE;  // convert to sec
+  if (period_time > 0) {
+    return 1.0f / period_time;
+  } else {
+    return 0.0f;
+  }
+}
+
+/* RISE AND FALL TIME
+rise = 10% - 90% of amplitude
+fall = 90% - 10% of amplitude */
+
+void calc_rise_fall_time(const float* raw_adc_samples, int adc_sample_count,
+                         float* rise_time, float* fall_time) {
+  if (adc_sample_count <= 0) {  // NO SAMPLES
+    *rise_time = 0.0f;
+    *fall_time = 0.0f;
+    return;
+  }
+
+  // FIND MIN / MAX VALUES
+  float min_val, max_val;
+  find_min_max(raw_adc_samples, adc_sample_count, &min_val, &max_val);
+
+  float amplitude = max_val - min_val;
+  float threshold_low = min_val + 0.1f * amplitude;
+  float threshold_high = min_val + 0.9f * amplitude;
+
+  // FIND RISE TIME - find first time where crosses low threshold then when it
+  // crosses high threshold and subtract
+  float rise_start =
+      find_rising_crossing(raw_adc_samples, adc_sample_count, threshold_low, 0);
+  float rise_end = -1.0f;
+  if (rise_start != -1) {
+    rise_end = find_rising_crossing(raw_adc_samples, adc_sample_count,
+                                    threshold_high, (int)rise_start);
+  }
+  if (rise_start != -1 && rise_end != -1) {
+    *rise_time = (rise_end - rise_start) / SAMPLE_RATE;
+  } else {
+    *rise_time = 0.0f;
+  }
+
+  /* FIND FALL TIME - find first time where crosses high threshold then when it
+  crosses low threshold and subtract only start AFTER PEAK */
+
+  float fall_start = find_falling_crossing(raw_adc_samples, adc_sample_count,
+                                           threshold_high, 0);
+  float fall_end = -1.0f;
+  if (fall_start != -1) {
+    fall_end = find_falling_crossing(raw_adc_samples, adc_sample_count,
+                                     threshold_low, (int)fall_start);
+  }
+  if (fall_start != -1 && fall_end != -1 && fall_end > fall_start) {
+    *fall_time = (fall_end - fall_start) / SAMPLE_RATE;
+  } else {
+    *fall_time = 0.0f;
+  }
 }
 
 //////////////////////// ANYTHING BELOW THIS IS NOT UPDATED
