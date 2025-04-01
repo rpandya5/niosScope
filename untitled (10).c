@@ -1,11 +1,4 @@
-/* updated as of march 28 11:30am. wave is plotted as sawtooth wave on cpulator.
- also plotting L->R instead of R->L. trigger implemented and it works. questions
-- are we expecting sawtooth type wave when running on cpulator?
-- need to adjust so that it goes R->L instead
-- measurement function prototypes added but measurement functions not added.
-integration for this is gonna take a second to do
-- would be good to also add a horizontal line for where the trigger value is
-- add y axis labels ALSO ADJUST RANGE FOR NEGATIVE VOLTAGES????
+/* March 31st, 10:30 pm, I incorporated the interrupts for the timer and the pushbuttons
 */
 
 #include <math.h>
