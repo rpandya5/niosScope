@@ -1,4 +1,4 @@
-/* updated as of april 1 10:06 am. integrates circular buffer, hardware based
+/* updated as of april 1 4PM. integrates circular buffer, hardware based
 timer, isrs
 
 GENERAL STRUCTURE IS:
@@ -7,10 +7,8 @@ GENERAL STRUCTURE IS:
 every SAMPLING_RATE time, it reads the value of the adc and adds to
 raw_adc_samples[] which is of size ADC_BUFFER_SIZE. all of this added to the
 circular buffer
-- basic measurement functions incorporated. averaging measurements not
-incorporated yet
 
-ALSO IDK IF THIS COMPILES PLS CHECK*/
+THIS COMPILES !!!! */
 
 #include <math.h>
 #include <stdbool.h>
@@ -25,14 +23,14 @@ ALSO IDK IF THIS COMPILES PLS CHECK*/
 #define KEY_BASE 0xFF200050
 #define TIMER_BASE 0xFF202000
 
-#define ADC_BUFFER_SIZE 80
+#define ADC_BUFFER_SIZE 1024
 #define REF_VOLTAGE 5.0f  // 5V reference
 
 volatile int write_index = 0;
 volatile int read_index = 0;
 
 volatile int* LEDS = (int*)LEDs_BASE;
-volatile int* BUTTON = BUTTON_BASE;
+volatile int* BUTTON = (int*)BUTTON_BASE;
 
 volatile int* ADC_ptr = (int*)ADC_BASE;
 volatile int* KEY_ptr = (int*)KEY_BASE;
@@ -48,13 +46,11 @@ bool trigger_mode_active = true;
 bool trigger_hold = false;
 
 float raw_adc_samples[ADC_BUFFER_SIZE];
+float voltage_samples[ADC_BUFFER_SIZE];
 int adc_sample_count = 0;
 extern void buffer_to_measurements(void);
 
 // ALL FUNCTION PROTOTYPES
-// old maybe remove
-unsigned int buffer_get(void);
-void process_available_samples(void);
 
 // basic inputs, isrs, buffers
 void interrupt_handler();
@@ -167,6 +163,8 @@ float calc_frequency(int period_samples);  // check the input of tihs
 void calc_rise_fall_time(const float* raw_adc_samples, int adc_sample_count,
                          float* rise_time, float* fall_time);
 
+float list_to_measurements(raw_adc_samples);
+
 int main(void) {
   update_timer(SAMPLE_RATE);
   //*(KEY_ptr + 2) = 0x3; // enable interrupts for all pushbuttons
@@ -180,8 +178,6 @@ int main(void) {
 
   while (1) {
     // *LEDS = index; WRITE OR READ?
-
-    // process_available_samples();  // chunk samples and process
   }
 
   return 0;
@@ -234,228 +230,10 @@ void pushbutton_ISR() {
   return;
 }
 
-/////// MEASUREMENT FUNCTIONS ////////
-
-// FIND THE DC OFFSET
-float calc_dc_offset(const float* raw_adc_samples, int adc_sample_count) {
-  // find the average value (sum / count) to find out centre point of signal
-
-  if (adc_sample_count <= 0) return 0.0f;
-  double sum = 0.0;
-  for (int i = 0; i < adc_sample_count; i++) {
-    sum += raw_adc_samples[i];
+/* CONVERT SAMPLES TO VOLTAGES + SEND TO MEASUREMENTS
+float list_to_measurements(raw_adc_samples) {
+  float voltage_samples[ADC_BUFFER_SIZE];
+  for (int i = 0; i < ADC_BUFFER_SIZE; i++) {
+    voltage_samples[i] = raw_adc_samples[i] * (REF_VOLTAGE / 4096.0f);
   }
-  return (float)(sum / adc_sample_count);
-}
-
-/* FIND RISING CROSSING
-rising crossing is when signal crosses the centre point (dc offset) */
-
-float find_rising_crossing(const float* raw_adc_samples, int adc_sample_count,
-                           float threshold, int start_index) {
-  // returns the first point where the signal crosses the threshold value (dc
-  // offset)
-  for (int i = start_index; i < adc_sample_count - 1; i++) {
-    if (raw_adc_samples[i] < threshold && raw_adc_samples[i + 1] >= threshold) {
-      float delta = raw_adc_samples[i + 1] - raw_adc_samples[i];
-      if (delta == 0) return i;  // Avoid division by zero
-      float fraction = (threshold - raw_adc_samples[i]) / delta;
-      return i + fraction;
-    }
-  }
-  return -1.0f;
-}
-
-// FIND FALLING CROSSING
-float find_falling_crossing(const float* raw_adc_samples, int adc_sample_count,
-                            float threshold, int start_index) {
-  for (int i = start_index; i < adc_sample_count - 1; i++) {
-    if (raw_adc_samples[i] >= threshold && raw_adc_samples[i + 1] < threshold) {
-      float delta = raw_adc_samples[i] - raw_adc_samples[i + 1];
-      if (delta == 0) return i;
-      float fraction = (raw_adc_samples[i] - threshold) / delta;
-      return i + fraction;
-    }
-  }
-  return -1.0f;
-}
-
-// MIN / MAX VALUES
-void find_min_max(const float* raw_adc_samples, int adc_sample_count,
-                  float* min_val, float* max_val) {
-  if (adc_sample_count <= 0) {  // no samples
-    *min_val = 0.0f;
-    *max_val = 0.0f;
-    return;
-  }
-
-  *min_val = raw_adc_samples[0];
-  *max_val = raw_adc_samples[0];
-
-  for (int i = 1; i < adc_sample_count; i++) {
-    if (raw_adc_samples[i] > *max_val) *max_val = raw_adc_samples[i];
-    if (raw_adc_samples[i] < *min_val) *min_val = raw_adc_samples[i];
-  }
-}
-
-float calc_vpp(const float* raw_adc_samples, int adc_sample_count) {
-  // vpp = max - min
-  if (adc_sample_count <= 0) return 0.0f;  // no samples
-
-  float min_val, max_val;
-  find_min_max(raw_adc_samples, adc_sample_count, &min_val, &max_val);
-
-  return max_val - min_val;
-}
-
-// RMS VOLTAGE
-float calc_rms(const float* raw_adc_samples, int adc_sample_count,
-               float dc_offset) {
-  // Vrms = ((Vi^2) / count)^0.5 - WORKS FOR ALL NOT JUST SINE WAVES
-
-  if (adc_sample_count <= 0) return 0.0f;  // no samples
-
-  double sum_sq = 0.0;
-  for (int i = 0; i < adc_sample_count; i++) {
-    float ac = raw_adc_samples[i] - dc_offset;
-    sum_sq += ac * ac;
-  }
-  return (float)sqrt(sum_sq / adc_sample_count);
-}
-
-float calc_frequency(int period_samples) {  // # of samples in 1 period
-  // f = 1 / T = 1 / (period samples / sampling rate)
-
-  if (period_samples <= 0) return 0.0f;              // no samples
-  float period_time = period_samples / SAMPLE_RATE;  // convert to sec
-  if (period_time > 0) {
-    return 1.0f / period_time;
-  } else {
-    return 0.0f;
-  }
-}
-
-/* RISE AND FALL TIME
-rise = 10% - 90% of amplitude
-fall = 90% - 10% of amplitude */
-
-void calc_rise_fall_time(const float* raw_adc_samples, int adc_sample_count,
-                         float* rise_time, float* fall_time) {
-  if (adc_sample_count <= 0) {  // NO SAMPLES
-    *rise_time = 0.0f;
-    *fall_time = 0.0f;
-    return;
-  }
-
-  // FIND MIN / MAX VALUES
-  float min_val, max_val;
-  find_min_max(raw_adc_samples, adc_sample_count, &min_val, &max_val);
-
-  float amplitude = max_val - min_val;
-  float threshold_low = min_val + 0.1f * amplitude;
-  float threshold_high = min_val + 0.9f * amplitude;
-
-  // FIND RISE TIME - find first time where crosses low threshold then when it
-  // crosses high threshold and subtract
-  float rise_start =
-      find_rising_crossing(raw_adc_samples, adc_sample_count, threshold_low, 0);
-  float rise_end = -1.0f;
-  if (rise_start != -1) {
-    rise_end = find_rising_crossing(raw_adc_samples, adc_sample_count,
-                                    threshold_high, (int)rise_start);
-  }
-  if (rise_start != -1 && rise_end != -1) {
-    *rise_time = (rise_end - rise_start) / SAMPLE_RATE;
-  } else {
-    *rise_time = 0.0f;
-  }
-
-  /* FIND FALL TIME - find first time where crosses high threshold then when it
-  crosses low threshold and subtract only start AFTER PEAK */
-
-  float fall_start = find_falling_crossing(raw_adc_samples, adc_sample_count,
-                                           threshold_high, 0);
-  float fall_end = -1.0f;
-  if (fall_start != -1) {
-    fall_end = find_falling_crossing(raw_adc_samples, adc_sample_count,
-                                     threshold_low, (int)fall_start);
-  }
-  if (fall_start != -1 && fall_end != -1 && fall_end > fall_start) {
-    *fall_time = (fall_end - fall_start) / SAMPLE_RATE;
-  } else {
-    *fall_time = 0.0f;
-  }
-}
-
-//////////////////////// ANYTHING BELOW THIS IS NOT UPDATED
-/////////////////////////////////////
-
-unsigned int buffer_get(void) {  // READ SAMPLE
-  if (write_index == read_index) {
-    return 0;  // empty buffer
-  }
-
-  unsigned int sample = raw_adc_samples[read_index];
-  read_index++;
-  if (read_index >= ADC_BUFFER_SIZE) read_index = 0;
-  return sample;
-}
-
-// PROCESS SAMPLES IN CHUNKS (rather than processing individually)
-#define CHUNK_SIZE 80
-
-void process_available_samples(void) {
-  int available_raw_adc_samples;
-
-  while (1) {
-    // how many samples are there?
-    if (write_index >= read_index) {
-      available_raw_adc_samples = write_index - read_index;
-    } else {
-      available_raw_adc_samples = ADC_BUFFER_SIZE - read_index + write_index;
-    }
-
-    if (available_raw_adc_samples <= 0)  // if none break
-      break;
-
-    // GET MAX SIZE TO READ
-    int samples_to_read;
-    if (available_raw_adc_samples > CHUNK_SIZE) {
-      samples_to_read = CHUNK_SIZE;
-    } else {
-      samples_to_read = available_raw_adc_samples;
-    }
-
-    // CONVERT VALUES TO VOTLAGE INSTEAD OF RAW ADC VALUES
-    for (int i = 0; i < samples_to_read; i++) {
-      unsigned int raw_sample = buffer_get();
-
-      float voltage = (raw_sample / 4095.0f) * REF_VOLTAGE;
-      raw_adc_samples[adc_sample_count++] = voltage;
-    }
-
-    // DIVIDE AND SEND IN CHUNKS
-    while (adc_sample_count >= CHUNK_SIZE) {
-      // first chunk
-      buffer_to_measurements();
-
-      // shift and send
-      int remaining = adc_sample_count - CHUNK_SIZE;
-      for (int j = 0; j < remaining; j++) {
-        raw_adc_samples[j] = raw_adc_samples[j + CHUNK_SIZE];
-      }
-      adc_sample_count = remaining;
-    }
-  }
-
-  // IF ANY MORE FULL CHUNKS SEND
-  while (adc_sample_count >= CHUNK_SIZE) {
-    buffer_to_measurements();
-
-    int remaining = adc_sample_count - CHUNK_SIZE;
-    for (int j = 0; j < remaining; j++) {
-      raw_adc_samples[j] = raw_adc_samples[j + CHUNK_SIZE];
-    }
-    adc_sample_count = remaining;
-  }
-}
+}*/
