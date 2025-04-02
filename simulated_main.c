@@ -1,3 +1,8 @@
+/* UPDATED AS OF 10:31 PM
+ADC , INPUTS , ISRS
+MEASUREMENTS
+DRAWINGS*/
+
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -42,28 +47,28 @@ int SAMPLE_RATE = 500000;  // THE LTC2308 HAS max 500kHz freq
 // 1kHz sine wave with 1V amplitude (2Vpp) and 1V DC offset (0-2V range)
 // Scaled to ADC range where 0V = 0 and 5V = 4095
 const uint16_t generate_sine[256] = {
-    1638, 1635, 1623, 1604, 1576, 1540, 1497, 1447, 1389, 1325, 1256, 1181,
-    1102, 1020, 935,  849,  761,  674,  589,  506,  426,  350,  279,  214,
-    155,  103,  58,   21,   1,    5,    25,   62,   114,  182,  263,  358,
-    465,  582,  706,  834,  961,  1087, 1207, 1322, 1429, 1527, 1614, 1635,
-    1638, 1627, 1599, 1557, 1501, 1431, 1349, 1258, 1155, 1045, 930,  811,
-    693,  576,  465,  360,  263,  177,  103,  42,   28,   2,    11,   45,
-    102,  181,  281,  399,  532,  677,  829,  980,  1126, 1267, 1397, 1516,
-    1608, 1638, 1637, 1607, 1548, 1462, 1352, 1220, 1070, 906,  738,  571,
-    414,  273,  148,  51,   0,    4,    35,   119,  235,  378,  543,  724,
-    912,  1094, 1266, 1420, 1547, 1633, 1636, 1615, 1535, 1409, 1244, 1049,
-    838,  624,  422,  239,  86,   2,    0,    81,   235,  435,  655,  867,
-    1078, 1269, 1434, 1561, 1638, 1638, 1558, 1412, 1214, 984,  741,  507,
-    291,  115,  11,   4,    93,   266,  500,  772,  1050, 1305, 1514, 1636,
-    1627, 1485, 1241, 939,  619,  333,  117,  6,    23,   175,  424,  736,
-    1061, 1344, 1546, 1628, 1583, 1413, 1153, 834,  511,  241,  60,   17,
-    102,  307,  583,  895,  1190, 1440, 1592, 1612, 1495, 1248, 937,  613,
-    326,  109,  19,   70,   260,  540,  794,  1147, 1428, 1603, 1627, 1488,
-    1207, 843,  504,  207,  42,   13,   147,  415,  774,  1146, 1451, 1607,
-    1624, 1456, 1149, 788,  434,  147,  20,   51,   259,  588,  959,  1302,
-    1541, 1619, 1539, 1274, 905,  517,  205,  28,   17,   189,  502,  891,
-    1257, 1523, 1627, 1549, 1314, 961,  571,  241,  41,   8,    145,  438,
-    824,  1208, 1496, 1629};
+    819,  839,  859,  879,  899,  919,  939,  959,  979,  998,  1018, 1037,
+    1057, 1076, 1095, 1114, 1132, 1151, 1169, 1187, 1205, 1223, 1240, 1257,
+    1274, 1291, 1307, 1323, 1339, 1354, 1369, 1384, 1398, 1412, 1426, 1439,
+    1452, 1465, 1477, 1489, 1500, 1511, 1521, 1532, 1541, 1551, 1559, 1568,
+    1576, 1583, 1590, 1597, 1603, 1608, 1613, 1618, 1622, 1626, 1629, 1632,
+    1634, 1636, 1637, 1638, 1638, 1638, 1637, 1636, 1634, 1632, 1629, 1626,
+    1622, 1618, 1613, 1608, 1603, 1597, 1590, 1583, 1576, 1568, 1559, 1551,
+    1541, 1532, 1521, 1511, 1500, 1489, 1477, 1465, 1452, 1439, 1426, 1412,
+    1398, 1384, 1369, 1354, 1339, 1323, 1307, 1291, 1274, 1257, 1240, 1223,
+    1205, 1187, 1169, 1151, 1132, 1114, 1095, 1076, 1057, 1037, 1018, 998,
+    979,  959,  939,  919,  899,  879,  859,  839,  819,  799,  779,  759,
+    739,  719,  699,  679,  659,  640,  620,  601,  581,  562,  543,  524,
+    506,  487,  469,  451,  433,  415,  398,  381,  364,  347,  331,  315,
+    299,  284,  269,  254,  240,  226,  212,  199,  186,  173,  161,  149,
+    138,  127,  117,  106,  97,   87,   79,   70,   62,   55,   48,   41,
+    35,   30,   25,   20,   16,   12,   9,    6,    4,    2,    1,    0,
+    0,    0,    1,    2,    4,    6,    9,    12,   16,   20,   25,   30,
+    35,   41,   48,   55,   62,   70,   79,   87,   97,   106,  117,  127,
+    138,  149,  161,  173,  186,  199,  212,  226,  240,  254,  269,  284,
+    299,  315,  331,  347,  364,  381,  398,  415,  433,  451,  469,  487,
+    506,  524,  543,  562,  581,  601,  620,  640,  659,  679,  699,  719,
+    739,  759,  779,  799};
 
 // 10kHz square wave with 2V amplitude (4Vpp) and 2V DC offset (0-4V range)
 // Scaled to ADC range where 0V = 0 and 5V = 4095
@@ -90,32 +95,6 @@ const uint16_t generate_square[256] = {
     3276, 3276, 3276, 3276, 3276, 3276, 0,    0,    0,    0,    0,    0,
     0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,
     0,    0,    0,    0};
-
-// 25kHz sawtooth wave with 1Vpp centered at 3V (range 2.5V-3.5V)
-// Scaled to ADC range where 0V = 0 and 5V = 4095
-const uint16_t generate_sawtooth[256] = {
-    2048, 2058, 2068, 2079, 2089, 2099, 2109, 2119, 2130, 2140, 2150, 2160,
-    2171, 2181, 2191, 2201, 2212, 2222, 2232, 2242, 2253, 2263, 2273, 2283,
-    2294, 2048, 2058, 2068, 2079, 2089, 2099, 2109, 2119, 2130, 2140, 2150,
-    2160, 2171, 2181, 2191, 2201, 2212, 2222, 2232, 2242, 2253, 2263, 2273,
-    2283, 2294, 2048, 2058, 2068, 2079, 2089, 2099, 2109, 2119, 2130, 2140,
-    2150, 2160, 2171, 2181, 2191, 2201, 2212, 2222, 2232, 2242, 2253, 2263,
-    2273, 2283, 2294, 2048, 2058, 2068, 2079, 2089, 2099, 2109, 2119, 2130,
-    2140, 2150, 2160, 2171, 2181, 2191, 2201, 2212, 2222, 2232, 2242, 2253,
-    2263, 2273, 2283, 2294, 2048, 2058, 2068, 2079, 2089, 2099, 2109, 2119,
-    2130, 2140, 2150, 2160, 2171, 2181, 2191, 2201, 2212, 2222, 2232, 2242,
-    2253, 2263, 2273, 2283, 2294, 2048, 2058, 2068, 2079, 2089, 2099, 2109,
-    2119, 2130, 2140, 2150, 2160, 2171, 2181, 2191, 2201, 2212, 2222, 2232,
-    2242, 2253, 2263, 2273, 2283, 2294, 2048, 2058, 2068, 2079, 2089, 2099,
-    2109, 2119, 2130, 2140, 2150, 2160, 2171, 2181, 2191, 2201, 2212, 2222,
-    2232, 2242, 2253, 2263, 2273, 2283, 2294, 2048, 2058, 2068, 2079, 2089,
-    2099, 2109, 2119, 2130, 2140, 2150, 2160, 2171, 2181, 2191, 2201, 2212,
-    2222, 2232, 2242, 2253, 2263, 2273, 2283, 2294, 2048, 2058, 2068, 2079,
-    2089, 2099, 2109, 2119, 2130, 2140, 2150, 2160, 2171, 2181, 2191, 2201,
-    2212, 2222, 2232, 2242, 2253, 2263, 2273, 2283, 2294, 2048, 2058, 2068,
-    2079, 2089, 2099, 2109, 2119, 2130, 2140, 2150, 2160, 2171, 2181, 2191,
-    2201, 2212, 2222, 2232, 2242, 2253, 2263, 2273, 2283, 2294, 2048, 2058,
-    2068, 2079, 2089, 2099};
 
 // ALL FUNCTION PROTOTYPES
 
@@ -223,8 +202,10 @@ void draw_line(int x0, int y0, int x1, int y1, int line_color);
 void background();
 void clear_screen();
 void update();
-void display_freq(int value);
-void display_amplitude(float value);
+void display_freq();
+void display_amplitude();
+void display_period();
+void display_dc_offset();
 void trigger_draw();
 
 // DRAWING VARIABLES
@@ -301,8 +282,8 @@ int points[321][2] = {
 };
 
 // measurements
-#define GOERTZEL_N 500                        // N - number of total bins
-#define BIN_WIDTH (SAMPLE_RATE / GOERTZEL_N)  // 1 khz per bin
+#define GOERTZEL_N 256  // N - number of total bins
+#define BIN_WIDTH 1000  // 1 khz per bin
 
 static float windowed_samples[GOERTZEL_N];  // input signal after widnwoing
 static float coeff[GOERTZEL_N / 2 + 1];     // coefficients for (0 -> N-1) / 2
@@ -359,9 +340,12 @@ int main(void) {
     windowing_for_measurement();
     calc_freq_period(&frequency);
     calc_amplitude();
+    calc_dc_offset();
 
-    display_freq(frequency);
-    display_amplitude(amplitude);
+    display_freq();
+    display_amplitude();
+    display_period();
+    display_dc_offset();
   }
   return 0;
 }
@@ -444,8 +428,8 @@ void plot_shifted_sinc(int shift, float amplitude) {
     }
   }
 }
-void display_freq(int value) {
-  int display_value = value;
+void display_freq() {
+  int display_value = frequency;
   plot_character(15, 58, '0' + display_value % 10);
   display_value /= 10;
   plot_character(16, 58, '0' + display_value % 10);
@@ -453,8 +437,8 @@ void display_freq(int value) {
   plot_character(17, 58, '0' + display_value % 10);
 }
 
-void display_amplitude(float value) {
-  int display_value = value * 100;
+void display_amplitude() {
+  int display_value = amplitude * 100;
   plot_character(4, 58, '0' + display_value % 10);
   display_value /= 10;
   plot_character(6, 58, '0' + display_value % 10);
@@ -469,6 +453,24 @@ void display_sample_rate(float value) {
   plot_character(6, 58, '0' + display_value % 10);
   display_value /= 10;
   plot_character(7, 58, '0' + display_value % 10);
+}
+
+void display_period() {
+  int display_value = (1 / frequency);
+  plot_character(43, 58, '0' + display_value % 10);
+  display_value /= 10;
+  plot_character(44, 58, '0' + display_value % 10);
+  display_value /= 10;
+  plot_character(45, 58, '0' + display_value % 10);
+}
+
+void display_dc_offset() {
+  int display_value = dc_offset * 100;
+  plot_character(36, 58, '0' + display_value % 10);
+  display_value /= 10;
+  plot_character(37, 58, '0' + display_value % 10);
+  display_value /= 10;
+  plot_character(38, 58, '0' + display_value % 10);
 }
 
 void background() {
@@ -516,6 +518,15 @@ void background() {
   plot_character(23, 58, 's');
   plot_character(24, 58, '=');
 
+  plot_character(32, 58, 'D');
+  plot_character(33, 58, 'C');
+  plot_character(34, 58, '=');
+  plot_character(39, 58, 'v');
+
+  plot_character(41, 58, 'T');
+  plot_character(42, 58, '=');
+  plot_character(46, 58, 's');
+
   int sample_time_seconds = SAMPLE_RATE / 25;
   if (sample_time_seconds < 1000) {
     plot_character(25, 58, '0' + (sample_time_seconds / 100) % 10);
@@ -537,7 +548,7 @@ void background() {
       plot_character(26, 58, '0' + (sample_time_seconds / 10) % 10);
       plot_character(27, 58, '0' + (sample_time_seconds) % 10);
       plot_character(29, 58, 's');
-      plot_character(29, 58, ' ');
+      plot_character(30, 58, ' ');
     }
   }
 }
@@ -565,8 +576,6 @@ void draw_graph(int samples[], int index, float amplitude, int freq) {
 
   delete_wave[XMAX - 1] = final_wave[XMAX - 1];
   final_wave[XMAX - 1] = 0;
-  // display_freq(frequency);
-  // display_amplitude(amplitude);
 }
 
 ////////////////// ACQUIRE CODE /////////////////////
@@ -600,9 +609,9 @@ void get_samples() {
   // SINE
 
   raw_adc_samples[write_index] = generate_square[write_index % 256];  // FOR
-  // SQUARE
-  /* raw_adc_samples[write_index] = generate_sawtooth[write_index % 256];  //
-   * FOR SAWTOOTH */
+  //  SQUARE
+  // raw_adc_samples[write_index] = generate_sawtooth[write_index % 256];
+  /* FOR SAWTOOTH */
 
   voltage_samples[write_index] =
       raw_adc_samples[write_index] * REF_VOLTAGE /
@@ -691,7 +700,7 @@ void windowing_for_measurement() {
 void calc_freq_period(float* frequency) {
   process_goertzel(SAMPLE_RATE, frequency);
   period = 1.0 / *frequency;
-  samples_in_period = (int)period * SAMPLE_RATE;
+  samples_in_period = (int)(period * SAMPLE_RATE);
 }
 
 /* GET THE CONSTANT COEFFICIENTS FOR ALGORITHM coefficient[k] = 2cos(2pik/N)
