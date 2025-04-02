@@ -475,7 +475,7 @@ void draw_graph(int samples[], int index, float amplitude, int freq) {
   }
   delete_wave[XMAX - 1] = final_wave[XMAX - 1];
   final_wave[XMAX - 1] = 0;
-  display_freq(0);
+  display_freq(frequency);
   display_amplitude(0.0);
 }
 
