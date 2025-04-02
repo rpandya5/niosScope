@@ -16,6 +16,7 @@ DRAWINGS*/
 #define BUTTON_BASE 0xFF200050
 #define KEY_BASE 0xFF200050
 #define TIMER_BASE 0xFF202000
+#define SWITCH_BASE 0xFF200040
 
 #define ADC_BUFFER_SIZE 1024
 #define REF_VOLTAGE 5.0f  // 5V reference
@@ -28,11 +29,13 @@ volatile int* BUTTON = (int*)BUTTON_BASE;
 
 volatile int* ADC_ptr = (int*)ADC_BASE;
 volatile int* KEY_ptr = (int*)KEY_BASE;
+volatile int* SWITCH_ptr = (int*)SWITCH_BASE;
+
 volatile int* interval_timer_ptr =
-    (int*)TIMER_BASE;  // interal timer base address
+    (int*)TIMER_BASE;  // interval timer base address
 
 // MANUALLY SET SETTINGS
-int TRIGGER = 1000;
+int TRIGGER = 3;  // IN VOLTAGE
 
 // TRIGGER VARIABLES
 bool trigger_mode_active = true;
@@ -149,15 +152,16 @@ void clear_screen();
 void update();
 void display_freq(int value);
 void display_amplitude(float value);
+void trigger_draw();
 
 // DRAWING VARIABLES
 #define XMAX 320
 #define YMAX 240
 
 // COLOURS
-#define GRAY 0x0100105
-#define BLUE 0x0000FF
-#define RED 0xFF0000
+#define BLUE 0x0100105
+#define GRAY 0xA9A9A9
+#define RED 0x808080
 #define WHITE 0xFFFFFF
 #define BLACK 0
 
@@ -235,11 +239,10 @@ static float window[GOERTZEL_N];            // hamming coefficient storage
 float dc_offset;
 float frequency;
 float period;
-float minimum_value;
-float maximum_value;
+float minimum_value = 0;
+float maximum_value = 0;
 float vpp;
 float amplitude;
-float rms;
 int samples_in_period;
 
 void get_coeff();
@@ -249,7 +252,6 @@ void calc_freq_period(float* frequency);
 void windowing_for_measurement();
 
 void calc_rise_fall_time(float* rise_time, float* fall_time);
-void calc_rms();
 void calc_amplitude();
 void calc_vpp();
 void find_min_max();
@@ -283,11 +285,21 @@ int main(void) {
     // MEASUREMENTS
     windowing_for_measurement();
     calc_freq_period(&frequency);
+    calc_amplitude();
+
+    display_freq(10.1);
+    display_amplitude(5.2);
   }
   return 0;
 }
 
 //////////////////// DISPLAY CODE ///////////////////////
+
+void trigger_draw() {
+  draw_line(10, (YMAX / 2) - (TRIGGER * 10), XMAX - 1,
+            (YMAX / 2) - (TRIGGER * 10), RED);
+}
+
 void plot_pixel(int x, int y, int line_color) {
   volatile int* one_pixel_address;
 
@@ -387,21 +399,28 @@ void display_sample_rate(float value) {
 }
 
 void background() {
-  draw_line(0, YMAX / 2, XMAX - 1, YMAX / 2, GRAY);
-  draw_line(0, YMAX / 2 + 1, XMAX - 1, YMAX / 2 + 1, GRAY);
-  draw_line(0, YMAX / 2 - 1, XMAX - 1, YMAX / 2 - 1, GRAY);
+  draw_line(0, YMAX / 2, XMAX - 1, YMAX / 2, BLUE);
+  draw_line(0, YMAX / 2 + 1, XMAX - 1, YMAX / 2 + 1, BLUE);
+  draw_line(0, YMAX / 2 - 1, XMAX - 1, YMAX / 2 - 1, BLUE);
 
-  draw_line(XMAX / 2, 0, XMAX / 2, YMAX - 1, GRAY);
-  draw_line(XMAX / 2 + 1, 0, XMAX / 2 + 1, YMAX - 1, GRAY);
-  draw_line(XMAX / 2 - 1, 0, XMAX / 2 - 1, YMAX - 1, GRAY);
+  draw_line(XMAX / 2, 0, XMAX / 2, YMAX - 1, BLUE);
+  draw_line(XMAX / 2 + 1, 0, XMAX / 2 + 1, YMAX - 1, BLUE);
+  draw_line(XMAX / 2 - 1, 0, XMAX / 2 - 1, YMAX - 1, BLUE);
 
   for (int i = 0; i < XMAX - 1; i = i + 10) {
-    draw_line(i, 0, i, YMAX - 1, GRAY);
+    draw_line(i, 0, i, YMAX - 1, BLUE);
   }
   for (int i = 0; i < YMAX - 1; i = i + 10) {
-    draw_line(0, i, XMAX - 1, i, GRAY);
+    draw_line(0, i, XMAX - 1, i, BLUE);
   }
 
+  // PLOT AXES + VALUES
+  plot_character(2, 15, '5');
+  plot_character(2, 31, '0');
+  draw_line(12, YMAX / 2 + 1, XMAX - 1, YMAX / 2 + 1, WHITE);  // X AXIS
+  draw_line(12, 0, 12, YMAX - 15, WHITE);                      // y axis
+
+  // PLOT MEASUREMENTS
   plot_character(0, 58, 'A');
   plot_character(1, 58, 'M');
   plot_character(2, 58, 'P');
@@ -472,8 +491,8 @@ void draw_graph(int samples[], int index, float amplitude, int freq) {
   }
   delete_wave[XMAX - 1] = final_wave[XMAX - 1];
   final_wave[XMAX - 1] = 0;
-  display_freq(0);
-  display_amplitude(0.0);
+  // display_freq(frequency);
+  // display_amplitude(amplitude);
 }
 
 ////////////////// ACQUIRE CODE /////////////////////
@@ -562,6 +581,7 @@ void trigger_function(int trigger_value) {
 
     draw_graph(raw_adc_samples, write_index, 1.0, 10);
     // SET HOLD MODE UNTIL USER CHANGES SOMETHING
+    trigger_draw();
     trigger_hold = true;
   } else { /*
      // NO TRIGGER FOUND, OR TRIGGER MODE NOT ACTIVE - PLOT NORMALLY
@@ -743,24 +763,6 @@ void calc_amplitude() {
     calc_vpp();
   }
   amplitude = vpp / 2.0;
-}
-
-// RMS VOLTAGE
-void calc_rms() {
-  // Vrms = ((Vi^2) / count)^0.5 - WORKS FOR ALL NOT JUST SINE WAVES
-
-  if (period <= 0) return 0.0f;  // no samples
-  if (dc_offset == 0) {
-    calc_dc_offset();
-  }
-
-  float sum_sq = 0.0;
-
-  for (int i = 0; i < samples_in_period; i++) {
-    float ac = voltage_samples[i] - dc_offset;
-    sum_sq += ac * ac;
-  }
-  rms = powf((sum_sq / samples_in_period), 0.5);
 }
 
 /* RISE AND FALL TIME
