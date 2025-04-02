@@ -1,8 +1,3 @@
-/* UPDATED AS OF 10:31 PM
-ADC , INPUTS , ISRS
-MEASUREMENTS
-DRAWINGS*/
-
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -18,11 +13,10 @@ DRAWINGS*/
 #define TIMER_BASE 0xFF202000
 #define SWITCH_BASE 0xFF200040
 
-#define ADC_BUFFER_SIZE 1024
+#define ADC_BUFFER_SIZE 256
 #define REF_VOLTAGE 5.0f  // 5V reference
 
 volatile int write_index = 0;
-volatile int read_index = 0;
 
 volatile int* LEDS = (int*)LEDs_BASE;
 volatile int* BUTTON = (int*)BUTTON_BASE;
@@ -48,6 +42,7 @@ int SAMPLE_RATE = 500000;  // THE LTC2308 HAS max 500kHz freq
 // ALL FUNCTION PROTOTYPES
 
 // basic inputs, isrs, buffers
+void trigger_function(int trigger_value);
 void interrupt_handler();
 void get_samples();
 void pushbutton_ISR();
@@ -262,7 +257,6 @@ void draw_graph(int samples[], int index, float amplitude, int freq);
 
 int main(void) {
   update_timer(SAMPLE_RATE);
-  //*(KEY_ptr + 2) = 0x3; // enable interrupts for all pushbuttons
   *(KEY_ptr + 2) = 0xF;  // write to the pushbutton interrupt mask register
   __builtin_wrctl(3, 0b11);
   __builtin_wrctl(0, 1);  // enable Nios II interrupts
@@ -270,25 +264,26 @@ int main(void) {
   // ADC SETUP
   *(ADC_ptr + 1) = 0xFFFFFFFF;
   clear_screen();
+  background();  // Draw the background grid initially
 
   // MEASUREMENT SETUP
   get_window();
   get_coeff();
 
   while (1) {
-    // UPDATE WAVEFORM BUFFER (only if not in trigger hold mode)
+    // Add a visual indicator that the code is running
+    *LEDS = write_index & 0xF;
 
     // TRIGGER FUNCTION HANDLES DRAWING BASED ON STATE
     trigger_function(TRIGGER);
-    //*LEDS = write_index; //WRITE OR READ?
 
     // MEASUREMENTS
     windowing_for_measurement();
     calc_freq_period(&frequency);
     calc_amplitude();
 
-    display_freq(10.1);
-    display_amplitude(5.2);
+    display_freq(frequency);
+    display_amplitude(amplitude);
   }
   return 0;
 }
@@ -475,9 +470,9 @@ void draw_graph(int samples[], int index, float amplitude, int freq) {
     final_wave[i] = 0;
   }
   float voltageFloat;
-  for (int i = 0; i < 80; i++) {
+  for (int i = 0; i < 256; i++) {
     // for (int j = 0; j<SAMPLE_RATE; j++){}
-    voltageFloat = samples[(index + i) % 80] * (1.0 / 4095.0);
+    voltageFloat = samples[(index + i) % 256] * (1.0 / 4095.0);
     plot_shifted_sinc(i * 4 - XMAX / 2, voltageFloat);
   }
   background();
@@ -489,6 +484,7 @@ void draw_graph(int samples[], int index, float amplitude, int freq) {
     delete_wave[i] = final_wave[i];
     final_wave[i] = 0;
   }
+
   delete_wave[XMAX - 1] = final_wave[XMAX - 1];
   final_wave[XMAX - 1] = 0;
   // display_freq(frequency);
@@ -552,24 +548,17 @@ void pushbutton_ISR() {
 
 // OSCILLOSCOPE LOGIC FUNCTIONS
 void trigger_function(int trigger_value) {
-  // IF WE'RE ALREADY HOLDING A TRIGGERED WAVEFORM, KEEP DISPLAYING IT
-  /*if (trigger_hold) {
-    // Just redraw the current waveform (don't update)
-    for (int i = 0; i < XMAX - 1; i++) {
-      draw_line(i, YMAX / 2 - final_wave[i], i + 1,
-                YMAX / 2 - final_wave[i + 1], WHITE);
-    }
-    return;
-  }*/
+  // Convert trigger value from voltage to ADC counts
+  int trigger_adc_value = (int)(trigger_value * 4095.0 / REF_VOLTAGE);
 
   // DO WE HAVE A VALUE >= TRIGGER IN SAMPLES???
   bool trigger_found = false;
   int trigger_index = -1;
 
   // Look for the first sample that meets or exceeds the trigger value
-  for (int i = 0; i < 80; i++) {
-    if ((raw_adc_samples[i] >= trigger_value) &&
-        (raw_adc_samples[(i + 1) % 80] <= trigger_value)) {
+  for (int i = 0; i < 256; i++) {
+    if ((raw_adc_samples[i] >= trigger_adc_value) &&
+        (raw_adc_samples[(i + 1) % 256] <= trigger_adc_value)) {
       trigger_found = true;
       trigger_index = i;
       break;
@@ -577,22 +566,14 @@ void trigger_function(int trigger_value) {
   }
 
   if (trigger_found && trigger_mode_active) {
-    // WE FOUND A TRIGGER POINT - PLOT 80 SAMPLES FROM TRIGGER INDEX
-
-    draw_graph(raw_adc_samples, write_index, 1.0, 10);
+    // WE FOUND A TRIGGER POINT - PLOT SAMPLES FROM TRIGGER INDEX
+    draw_graph(raw_adc_samples, trigger_index, 1.0, 10);
     // SET HOLD MODE UNTIL USER CHANGES SOMETHING
     trigger_draw();
     trigger_hold = true;
-  } else { /*
-     // NO TRIGGER FOUND, OR TRIGGER MODE NOT ACTIVE - PLOT NORMALLY
-     for (int i = 0; i < XMAX - 1; i++) {
-       draw_line(i, YMAX / 2 - delete_wave[i], i + 1,
-                 YMAX / 2 - delete_wave[i + 1], BLACK);
-       if (i < XMAX - 1) {
-         draw_line(i, YMAX / 2 - final_wave[i], i + 1,
-                   YMAX / 2 - final_wave[i + 1], WHITE);
-       }
-     }*/
+  } else {
+    // NO TRIGGER FOUND, OR TRIGGER MODE NOT ACTIVE - STILL DRAW SOMETHING
+    draw_graph(raw_adc_samples, write_index, 1.0, 10);
   }
 }
 
