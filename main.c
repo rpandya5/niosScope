@@ -42,9 +42,26 @@ bool trigger_hold = false;
 
 int raw_adc_samples[ADC_BUFFER_SIZE];
 float voltage_samples[ADC_BUFFER_SIZE];
+void trigger_function(int trigger_value);
 int SAMPLE_RATE = 500000;  // THE LTC2308 HAS max 500kHz freq
 
 // ALL FUNCTION PROTOTYPES
+float cosine(float x){
+    float result = 1;
+    float x_square = x * x;
+    float power = x_square;
+    int factorial = 2;
+    int sign = -1;
+    
+    for (int i = 1; i < 9; i++) {
+        result += sign * power / factorial;
+        power *= x_square;
+        factorial *= (2 * i + 1) * (2 * i + 2);
+        sign = -sign;
+    }
+    return result;
+}
+
 
 // basic inputs, isrs, buffers
 void interrupt_handler();
@@ -577,7 +594,7 @@ void calc_freq(float* frequency) { process_goertzel(SAMPLE_RATE, frequency); }
 only do from 0 -> N/2 because dft is symmetric for real valued inputs */
 void get_coeff() {
   for (int k = 0; k <= GOERTZEL_N / 2; k++) {
-    coeff[k] = 2.0f * cosf(2.0f * M_PI * (float)k / (float)GOERTZEL_N);
+    coeff[k] = 2.0f * cosine(2.0f * M_PI * (float)k / (float)GOERTZEL_N);
   }
 }
 
@@ -588,7 +605,7 @@ leaking
  */
 void get_window() {
   for (int n = 0; n < GOERTZEL_N; n++) {
-    window[n] = 0.54f - 0.46f * cosf(2.0f * M_PI * n / (GOERTZEL_N - 1));
+    window[n] = 0.54f - 0.46f * cosine(2.0f * M_PI * n / (GOERTZEL_N - 1));
   }
 }
 
