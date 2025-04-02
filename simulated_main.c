@@ -201,7 +201,6 @@ void clear_screen();
 void update();
 void display_freq();
 void display_amplitude();
-void display_period();
 void display_dc_offset();
 void trigger_draw();
 
@@ -341,7 +340,6 @@ int main(void) {
 
     display_freq();
     display_amplitude();
-    display_period();
     display_dc_offset();
   }
   return 0;
@@ -427,47 +425,41 @@ void plot_shifted_sinc(int shift, float amplitude) {
 }
 void display_freq() {
   int display_value = frequency;
-  plot_character(15, 58, '0' + display_value % 10);
+	
+	if (frequency >-1000){display_value/=1000;}
+  plot_character(17, 58, '0' + display_value % 10);
   display_value /= 10;
   plot_character(16, 58, '0' + display_value % 10);
   display_value /= 10;
-  plot_character(17, 58, '0' + display_value % 10);
+  plot_character(15, 58, '0' + display_value % 10);
 }
 
 void display_amplitude() {
   int display_value = amplitude * 100;
-  plot_character(4, 58, '0' + display_value % 10);
+  plot_character(7,58, '0' + display_value % 10);
   display_value /= 10;
   plot_character(6, 58, '0' + display_value % 10);
   display_value /= 10;
-  plot_character(7, 58, '0' + display_value % 10);
+  plot_character(4,58, '0' + display_value % 10);
 }
 
 void display_sample_rate(float value) {
   int display_value = value * 100;
-  plot_character(4, 58, '0' + display_value % 10);
+  plot_character(23, 58, '0' + display_value % 10);
   display_value /= 10;
-  plot_character(6, 58, '0' + display_value % 10);
+  plot_character(24, 58, '0' + display_value % 10);
   display_value /= 10;
-  plot_character(7, 58, '0' + display_value % 10);
-}
-
-void display_period() {
-  int display_value = (1 / frequency);
-  plot_character(43, 58, '0' + display_value % 10);
-  display_value /= 10;
-  plot_character(44, 58, '0' + display_value % 10);
-  display_value /= 10;
-  plot_character(45, 58, '0' + display_value % 10);
+  plot_character(25,58, '0' + display_value % 10);
 }
 
 void display_dc_offset() {
   int display_value = dc_offset * 100;
-  plot_character(36, 58, '0' + display_value % 10);
+  plot_character(39, 58, '0' + display_value % 10);
   display_value /= 10;
-  plot_character(37, 58, '0' + display_value % 10);
-  display_value /= 10;
+  plot_character(37, 58, '.');
   plot_character(38, 58, '0' + display_value % 10);
+  display_value /= 10;
+  plot_character(36, 58, '0' + display_value % 10);
 }
 
 void background() {
@@ -487,7 +479,7 @@ void background() {
   }
 
   // PLOT AXES + VALUES
-  plot_character(2, 15, '5');
+  //plot_character(2, 15, '5');
   plot_character(2, 31, '0');
   draw_line(12, YMAX / 2 + 1, XMAX - 1, YMAX / 2 + 1, WHITE);  // X AXIS
   draw_line(12, 0, 12, YMAX - 15, WHITE);                      // y axis
@@ -507,9 +499,17 @@ void background() {
   plot_character(12, 58, 'E');
   plot_character(13, 58, 'Q');
   plot_character(14, 58, '=');
+	if (frequency >1000){
+	  plot_character(18, 58, 'k');
+	  plot_character(19, 58, 'H');
+	  plot_character(20, 58, 'z');
+	}
+	else{
+	  plot_character(18, 58, 'H');
+	  plot_character(19, 58, 'z');
+	  plot_character(20, 58, ' ');
 
-  plot_character(18, 58, 'H');
-  plot_character(19, 58, 'z');
+	}
 
   plot_character(22, 58, 'T');
   plot_character(23, 58, 's');
@@ -518,11 +518,8 @@ void background() {
   plot_character(32, 58, 'D');
   plot_character(33, 58, 'C');
   plot_character(34, 58, '=');
-  plot_character(39, 58, 'v');
+  plot_character(40, 58, 'v');
 
-  plot_character(41, 58, 'T');
-  plot_character(42, 58, '=');
-  plot_character(46, 58, 's');
 
   int sample_time_seconds = SAMPLE_RATE / 25;
   if (sample_time_seconds < 1000) {
@@ -611,8 +608,7 @@ void get_samples() {
   /* FOR SAWTOOTH */
 
   voltage_samples[write_index] =
-      raw_adc_samples[write_index] * REF_VOLTAGE /
-      4095.0;  // CONVERT TO VOLTAGE AND ADD TO VOLTAGE_SAMPLES LIST
+      raw_adc_samples[write_index] * REF_VOLTAGE /4095.0;  // CONVERT TO VOLTAGE AND ADD TO VOLTAGE_SAMPLES LIST
   write_index = (write_index + 1) % ADC_BUFFER_SIZE;
 }
 
@@ -813,7 +809,7 @@ void find_min_max() {
   minimum_value = voltage_samples[0];
   maximum_value = voltage_samples[0];
 
-  for (int i = 1; i < samples_in_period; i++) {
+  for (int i = 1; i < ADC_BUFFER_SIZE; i++) {
     if (voltage_samples[i] > maximum_value) maximum_value = voltage_samples[i];
     if (voltage_samples[i] < minimum_value) minimum_value = voltage_samples[i];
   }
