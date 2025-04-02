@@ -1,22 +1,16 @@
-/* updated as of april 1 10:06 am. integrates circular buffer, hardware based
-timer, isrs
-
-GENERAL STRUCTURE IS:
-- adc setup, interrupts setup
-- update_timer function function basically is an interrupt based timer where
-every SAMPLING_RATE time, it reads the value of the adc and adds to
-raw_adc_samples[] which is of size ADC_BUFFER_SIZE. all of this added to the
-circular buffer
-- basic measurement functions incorporated. averaging measurements not
-incorporated yet
-
-ALSO IDK IF THIS COMPILES PLS CHECK*/
+/* UPDATED AS OF APRIL 1, 8:23 PM. EVERYTHING COMPILES. INTEGRATES
+- ADC reading + voltage conversion
+- inputs / isrs
+- drawing / graphing
+- ONLY FREQUENCY CALCULATION OTHER MEASUREMENTS NEED TO BE DONE
+freq calc also uses cosf - need to adjust this */
 
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define ADC_BASE 0xFF204000
 #define LEDs_BASE 0xFF200000
@@ -25,54 +19,38 @@ ALSO IDK IF THIS COMPILES PLS CHECK*/
 #define KEY_BASE 0xFF200050
 #define TIMER_BASE 0xFF202000
 
-#define ADC_BUFFER_SIZE 80
+#define ADC_BUFFER_SIZE 1024
 #define REF_VOLTAGE 5.0f  // 5V reference
 
 volatile int write_index = 0;
 volatile int read_index = 0;
 
 volatile int* LEDS = (int*)LEDs_BASE;
-//volatile int* BUTTON = (int*) BUTTON_BASE;
+volatile int* BUTTON = (int*)BUTTON_BASE;
 
 volatile int* ADC_ptr = (int*)ADC_BASE;
 volatile int* KEY_ptr = (int*)KEY_BASE;
-volatile int* interval_timer_ptr =(int*)TIMER_BASE;  // interal timer base address
+volatile int* interval_timer_ptr =
+    (int*)TIMER_BASE;  // interal timer base address
 
 // MANUALLY SET SETTINGS
 int TRIGGER = 1000;
-int SAMPLE_RATE = 50000;  // THE LTC2308 HAS max 500kHz freq
 
 // TRIGGER VARIABLES
 bool trigger_mode_active = true;
 bool trigger_hold = false;
 
 int raw_adc_samples[ADC_BUFFER_SIZE];
-int adc_sample_count = 0;
-extern void buffer_to_measurements(void);
+float voltage_samples[ADC_BUFFER_SIZE];
+int SAMPLE_RATE = 500000;  // THE LTC2308 HAS max 500kHz freq
 
 // ALL FUNCTION PROTOTYPES
-// old maybe remove
-unsigned int buffer_get(void);
-void process_available_samples(void);
-
-
-
-//DRAWING FUNCTIONS
-void plot_pixel(int x, int y, int line_color);
-void plot_point(int x, int y, int line_color);
-void draw_line(int x0, int y0, int x1, int y1, int line_color);
-void background();
-void clear_screen();
-void update();
-void display_freq(int value);
-void display_amplitude(float value);
-
 
 // basic inputs, isrs, buffers
 void interrupt_handler();
 void get_samples();
 void pushbutton_ISR();
-void update_timer(int sample_rate);
+void update_timer(int SAMPLE_RATE);
 void the_reset(void) __attribute__((section(".reset")));
 
 void the_reset(void) {
@@ -164,8 +142,17 @@ void the_exception(void) {
   asm("eret");
 }
 
+// DRAWING FUNCTIONS
+void plot_pixel(int x, int y, int line_color);
+void plot_point(int x, int y, int line_color);
+void draw_line(int x0, int y0, int x1, int y1, int line_color);
+void background();
+void clear_screen();
+void update();
+void display_freq(int value);
+void display_amplitude(float value);
 
-//DRAWING VARIABLES
+// DRAWING VARIABLES
 #define XMAX 320
 #define YMAX 240
 
@@ -176,11 +163,11 @@ void the_exception(void) {
 #define WHITE 0xFFFFFF
 #define BLACK 0
 
-volatile int pixel_buffer_start = 0x08000000; // global variable
-int final_wave[320] = {0};   // current waveform data
+volatile int pixel_buffer_start = 0x08000000;  // global variable
+int final_wave[320] = {0};                     // current waveform data
 int delete_wave[320] = {0};  // prev waveform data (for erasing)
 
-//SINC FUNCTION
+// SINC FUNCTION
 int points[321][2] = {
     {-160, 0},  {-159, 1},  {-158, 1},  {-157, 1},  {-156, 1},  {-155, 1},
     {-154, 0},  {-153, 0},  {-152, 0},  {-151, 0},  {-150, 0},  {-149, 0},
@@ -229,24 +216,32 @@ int points[321][2] = {
     {104, 1},   {105, 1},   {106, 1},   {107, 1},   {108, 1},   {109, 1},
     {110, 1},   {111, 0},   {112, 0},   {113, 0},   {114, 0},   {115, 0},
     {116, -1},  {117, -1},  {118, -1},  {119, -1},  {120, -1},  {121, -1},
-    {122, -1},  {123, 0},   {124, 0},   {125, 0},   {126, 0},   {127, 0}, {128, 0},   {129, 1},   {130, 1},   {131, 1},   {132, 1},   {133, 1}, {134, 1},   {135, 1},   {136, 0},   {137, 0},   {138, 0},   {139, 0}, {140, 0},   {141, 0},   {142, -1},  {143, -1},  {144, -1},  {145, -1}, {146, -1},  {147, -1},  {148, 0},   {149, 0},   {150, 0},   {151, 0}, {152, 0},   {153, 0},   {154, 0},   {155, 1},   {156, 1},   {157, 1}, {158, 1},   {159, 1},
+    {122, -1},  {123, 0},   {124, 0},   {125, 0},   {126, 0},   {127, 0},
+    {128, 0},   {129, 1},   {130, 1},   {131, 1},   {132, 1},   {133, 1},
+    {134, 1},   {135, 1},   {136, 0},   {137, 0},   {138, 0},   {139, 0},
+    {140, 0},   {141, 0},   {142, -1},  {143, -1},  {144, -1},  {145, -1},
+    {146, -1},  {147, -1},  {148, 0},   {149, 0},   {150, 0},   {151, 0},
+    {152, 0},   {153, 0},   {154, 0},   {155, 1},   {156, 1},   {157, 1},
+    {158, 1},   {159, 1},
 };
 
-
 // measurements
-float calc_dc_offset(const float* raw_adc_samples, int adc_sample_count);
-float find_rising_crossing(const float* raw_adc_samples, int adc_sample_count,
-                           float threshold, int start_index);
-float find_falling_crossing(const float* raw_adc_samples, int adc_sample_count,
-                            float threshold, int start_index);
-void find_min_max(const float* raw_adc_samples, int adc_sample_count,
-                  float* min_val, float* max_val);
-float calc_vpp(const float* raw_adc_samples, int adc_sample_count);
-float calc_rms(const float* raw_adc_samples, int adc_sample_count,
-               float dc_offset);
-float calc_frequency(int period_samples);  // check the input of tihs
-void calc_rise_fall_time(const float* raw_adc_samples, int adc_sample_count,
-                         float* rise_time, float* fall_time);
+#define GOERTZEL_N 500                        // N - number of total bins
+#define BIN_WIDTH (SAMPLE_RATE / GOERTZEL_N)  // 1 khz per bin
+
+static float windowed_samples[GOERTZEL_N];  // input signal after widnwoing
+static float coeff[GOERTZEL_N / 2 + 1];     // coefficients for (0 -> N-1) / 2
+                                            // (symmetry for real values)
+static float window[GOERTZEL_N];            // hamming coefficient storage
+
+float frequency;
+
+void get_coeff();
+void get_window();
+void process_goertzel(int sample_rate, float* freq);
+void calc_freq(float* frequency);
+void windowing_for_measurement();
+
 void draw_graph(int samples[], int index, float amplitude, int freq);
 
 int main(void) {
@@ -258,220 +253,214 @@ int main(void) {
 
   // ADC SETUP
   *(ADC_ptr + 1) = 0xFFFFFFFF;
-	clear_screen();
+  clear_screen();
+
+  // MEASUREMENT SETUP
+  get_window();
+  get_coeff();
+
   while (1) {
-        // UPDATE WAVEFORM BUFFER (only if not in trigger hold mode)
+    // UPDATE WAVEFORM BUFFER (only if not in trigger hold mode)
 
     // TRIGGER FUNCTION HANDLES DRAWING BASED ON STATE
     trigger_function(TRIGGER);
     //*LEDS = write_index; //WRITE OR READ?
 
-    // process_available_samples();  // chunk samples and process
+    // MEASUREMENTS
+    windowing_for_measurement();
+    calc_freq(&frequency);
   }
-
   return 0;
 }
 
 //////////////////// DISPLAY CODE ///////////////////////
-void plot_pixel(int x, int y, int line_color)
-{
-    volatile int *one_pixel_address;
+void plot_pixel(int x, int y, int line_color) {
+  volatile int* one_pixel_address;
 
-        one_pixel_address = (int*) (0x08000000 + (y << 10) + (x << 1));
+  one_pixel_address = (int*)(0x08000000 + (y << 10) + (x << 1));
 
-        *one_pixel_address = line_color;
+  *one_pixel_address = line_color;
 }
 
-void plot_character(int x, int y, char c){
-    volatile char* character_buffer = (char*) (0x09000000+(y<<7)+x);
-    *character_buffer = c;
+void plot_character(int x, int y, char c) {
+  volatile char* character_buffer = (char*)(0x09000000 + (y << 7) + x);
+  *character_buffer = c;
 }
 
-void clear_screen(){
-	for (int i=0; i<60; i++){
-		for(int j=0; j<80; j++){
-			plot_character(i,j,' ');	
-		}
-	}
-	for (int i=0; i<XMAX; i++){
-		for(int j=0; j<YMAX; j++){
-			plot_pixel(i,j,0);	
-		}
-	}
+void clear_screen() {
+  for (int i = 0; i < 60; i++) {
+    for (int j = 0; j < 80; j++) {
+      plot_character(i, j, ' ');
+    }
+  }
+  for (int i = 0; i < XMAX; i++) {
+    for (int j = 0; j < YMAX; j++) {
+      plot_pixel(i, j, 0);
+    }
+  }
 }
 
-void draw_line(int x0, int y0, int x1, int y1, int line_color){
-	int deltaX = x1 - x0;
-	int deltaY = y1 - y0;
-	
-	
-	
-	if ((deltaX == 0) && (deltaY == 0)){plot_pixel(x0, y0, line_color);}
-	else if (abs(deltaX) >= abs(deltaY)){
-		if (deltaX > 0){
-			for (int i = 0; i<= deltaX; i++){
-				plot_pixel(x0+i, (deltaY*(i))/ deltaX+y0, line_color);
-			}
-		} else{
-			for (int i = deltaX; i< 0; i++){
-				plot_pixel(x0+i, (deltaY*(i))/deltaX+y0, line_color);
-			}
-		}
-	}
-	else{
-		if (deltaY > 0){
-			for (int i = 0; i< deltaY; i++){
-				plot_pixel((deltaX*(i))/ deltaY+x0, y0+i, line_color);
-			}
-		} else{
-			for (int i = deltaY; i< 0; i++){
-				plot_pixel((deltaX*(i))/ deltaY+x0, y0+i, line_color);
+void draw_line(int x0, int y0, int x1, int y1, int line_color) {
+  int deltaX = x1 - x0;
+  int deltaY = y1 - y0;
 
-			}
-		}
-	}
+  if ((deltaX == 0) && (deltaY == 0)) {
+    plot_pixel(x0, y0, line_color);
+  } else if (abs(deltaX) >= abs(deltaY)) {
+    if (deltaX > 0) {
+      for (int i = 0; i <= deltaX; i++) {
+        plot_pixel(x0 + i, (deltaY * (i)) / deltaX + y0, line_color);
+      }
+    } else {
+      for (int i = deltaX; i < 0; i++) {
+        plot_pixel(x0 + i, (deltaY * (i)) / deltaX + y0, line_color);
+      }
+    }
+  } else {
+    if (deltaY > 0) {
+      for (int i = 0; i < deltaY; i++) {
+        plot_pixel((deltaX * (i)) / deltaY + x0, y0 + i, line_color);
+      }
+    } else {
+      for (int i = deltaY; i < 0; i++) {
+        plot_pixel((deltaX * (i)) / deltaY + x0, y0 + i, line_color);
+      }
+    }
+  }
 }
 
-
-void plot_point(int x, int y, int line_color){
-	if (abs(y)<YMAX/2){
-		plot_pixel(x, YMAX/2-y, line_color);
-	}
-
+void plot_point(int x, int y, int line_color) {
+  if (abs(y) < YMAX / 2) {
+    plot_pixel(x, YMAX / 2 - y, line_color);
+  }
 }
-void plot_shifted_sinc(int shift, float amplitude){
-	for (int i=0; i < 321; i++){
-		// the linear offset I believe is needed because of rounding errors, I think I will need a second list for the larger SINC
-		if(abs(points[i][0]+shift) < XMAX/2){
-			final_wave[points[i][0]+shift+XMAX/2] += (int) points[i][1]*amplitude;
-			//points[i][0]+shift+XMAX/2
-		}
-	}
-
-
+void plot_shifted_sinc(int shift, float amplitude) {
+  for (int i = 0; i < 321; i++) {
+    // the linear offset I believe is needed because of rounding errors, I think
+    // I will need a second list for the larger SINC
+    if (abs(points[i][0] + shift) < XMAX / 2) {
+      final_wave[points[i][0] + shift + XMAX / 2] +=
+          (int)points[i][1] * amplitude;
+      // points[i][0]+shift+XMAX/2
+    }
+  }
 }
-void display_freq(int value){
-    int display_value = value;
-    plot_character(15, 58, '0'+display_value%10);
-    display_value/=10;
-    plot_character(16, 58, '0'+display_value%10);
-    display_value/=10;
-    plot_character(17, 58, '0'+display_value%10);
+void display_freq(int value) {
+  int display_value = value;
+  plot_character(15, 58, '0' + display_value % 10);
+  display_value /= 10;
+  plot_character(16, 58, '0' + display_value % 10);
+  display_value /= 10;
+  plot_character(17, 58, '0' + display_value % 10);
 }
 
-void display_amplitude(float value){
-    int display_value = value*100;
-    plot_character(4, 58, '0'+display_value%10);
-    display_value/=10;
-    plot_character(6, 58, '0'+display_value%10);
-    display_value/=10;
-    plot_character(7, 58, '0'+display_value%10);
+void display_amplitude(float value) {
+  int display_value = value * 100;
+  plot_character(4, 58, '0' + display_value % 10);
+  display_value /= 10;
+  plot_character(6, 58, '0' + display_value % 10);
+  display_value /= 10;
+  plot_character(7, 58, '0' + display_value % 10);
 }
 
-void display_sample_rate(float value){
-    int display_value = value*100;
-    plot_character(4, 58, '0'+display_value%10);
-    display_value/=10;
-    plot_character(6, 58, '0'+display_value%10);
-    display_value/=10;
-    plot_character(7, 58, '0'+display_value%10);
+void display_sample_rate(float value) {
+  int display_value = value * 100;
+  plot_character(4, 58, '0' + display_value % 10);
+  display_value /= 10;
+  plot_character(6, 58, '0' + display_value % 10);
+  display_value /= 10;
+  plot_character(7, 58, '0' + display_value % 10);
 }
 
-void background(){
-	draw_line(0, YMAX/2, XMAX-1, YMAX/2, GRAY);
-	draw_line(0, YMAX/2+1, XMAX-1, YMAX/2+1, GRAY);
-	draw_line(0, YMAX/2-1, XMAX-1, YMAX/2-1, GRAY);
-	
-	draw_line(XMAX/2, 0, XMAX/2, YMAX-1, GRAY);
-	draw_line(XMAX/2+1, 0, XMAX/2+1, YMAX-1, GRAY);
-	draw_line(XMAX/2-1, 0, XMAX/2-1, YMAX-1, GRAY);
-	
-	for (int i = 0; i < XMAX-1; i=i+10){
-		draw_line(i, 0, i, YMAX-1, GRAY);
-	}
-	for (int i = 0; i < YMAX-1; i=i+10){
-		draw_line(0, i, XMAX-1, i, GRAY);
-	}
+void background() {
+  draw_line(0, YMAX / 2, XMAX - 1, YMAX / 2, GRAY);
+  draw_line(0, YMAX / 2 + 1, XMAX - 1, YMAX / 2 + 1, GRAY);
+  draw_line(0, YMAX / 2 - 1, XMAX - 1, YMAX / 2 - 1, GRAY);
 
-    plot_character(0, 58, 'A');
-    plot_character(1, 58, 'M');
-    plot_character(2, 58, 'P');
-    plot_character(3, 58, '=');
-    plot_character(5, 58, '.');
-    //AMP=0.00V
+  draw_line(XMAX / 2, 0, XMAX / 2, YMAX - 1, GRAY);
+  draw_line(XMAX / 2 + 1, 0, XMAX / 2 + 1, YMAX - 1, GRAY);
+  draw_line(XMAX / 2 - 1, 0, XMAX / 2 - 1, YMAX - 1, GRAY);
 
-    plot_character(8, 58, 'V');
+  for (int i = 0; i < XMAX - 1; i = i + 10) {
+    draw_line(i, 0, i, YMAX - 1, GRAY);
+  }
+  for (int i = 0; i < YMAX - 1; i = i + 10) {
+    draw_line(0, i, XMAX - 1, i, GRAY);
+  }
 
-    plot_character(10, 58, 'F');
-    plot_character(11, 58, 'R');
-    plot_character(12, 58, 'E');
-    plot_character(13, 58, 'Q');
-    plot_character(14, 58, '=');
+  plot_character(0, 58, 'A');
+  plot_character(1, 58, 'M');
+  plot_character(2, 58, 'P');
+  plot_character(3, 58, '=');
+  plot_character(5, 58, '.');
+  // AMP=0.00V
 
+  plot_character(8, 58, 'V');
 
-    plot_character(18, 58, 'H');
-    plot_character(19, 58, 'z');
-	
-    plot_character(22, 58, 'T');
-    plot_character(23, 58, 's');
-    plot_character(24, 58, '=');
+  plot_character(10, 58, 'F');
+  plot_character(11, 58, 'R');
+  plot_character(12, 58, 'E');
+  plot_character(13, 58, 'Q');
+  plot_character(14, 58, '=');
 
-    int sample_time_seconds = SAMPLE_RATE/25;
-	if(sample_time_seconds <1000){
-	    plot_character(25, 58, '0'+(sample_time_seconds /100)%10);
-		plot_character(26, 58, '0'+(sample_time_seconds /10)%10);
-		plot_character(27, 58, '0'+(sample_time_seconds)%10);
-		plot_character(29, 58, 'u');
-		plot_character(30, 58, 's');
-	}
-	else{
-		sample_time_seconds = sample_time_seconds/1000;
-		if(sample_time_seconds <1000){
-			plot_character(25, 58, '0'+(sample_time_seconds /100)%10);
-			plot_character(26, 58, '0'+(sample_time_seconds /10)%10);
-			plot_character(27, 58, '0'+(sample_time_seconds)%10);
-			plot_character(29, 58, 'm');
-			plot_character(30, 58, 's');
-		}
-		else{
-			sample_time_seconds = sample_time_seconds/1000;
-			plot_character(25, 58, '0'+(sample_time_seconds /100)%10);
-			plot_character(26, 58, '0'+(sample_time_seconds /10)%10);
-			plot_character(27, 58, '0'+(sample_time_seconds)%10);
-			plot_character(29, 58, 's');
-			plot_character(29, 58, ' ');
-		}
-	}
+  plot_character(18, 58, 'H');
+  plot_character(19, 58, 'z');
+
+  plot_character(22, 58, 'T');
+  plot_character(23, 58, 's');
+  plot_character(24, 58, '=');
+
+  int sample_time_seconds = SAMPLE_RATE / 25;
+  if (sample_time_seconds < 1000) {
+    plot_character(25, 58, '0' + (sample_time_seconds / 100) % 10);
+    plot_character(26, 58, '0' + (sample_time_seconds / 10) % 10);
+    plot_character(27, 58, '0' + (sample_time_seconds) % 10);
+    plot_character(29, 58, 'u');
+    plot_character(30, 58, 's');
+  } else {
+    sample_time_seconds = sample_time_seconds / 1000;
+    if (sample_time_seconds < 1000) {
+      plot_character(25, 58, '0' + (sample_time_seconds / 100) % 10);
+      plot_character(26, 58, '0' + (sample_time_seconds / 10) % 10);
+      plot_character(27, 58, '0' + (sample_time_seconds) % 10);
+      plot_character(29, 58, 'm');
+      plot_character(30, 58, 's');
+    } else {
+      sample_time_seconds = sample_time_seconds / 1000;
+      plot_character(25, 58, '0' + (sample_time_seconds / 100) % 10);
+      plot_character(26, 58, '0' + (sample_time_seconds / 10) % 10);
+      plot_character(27, 58, '0' + (sample_time_seconds) % 10);
+      plot_character(29, 58, 's');
+      plot_character(29, 58, ' ');
+    }
+  }
 }
 
-
-
-void draw_graph(int samples[], int index, float amplitude, int freq){
-	  // CLEAR THE FINAL_WAVE ARRAY BEFORE PLOTTING NEW DATA
-	  for (int i = 0; i < XMAX; i++) {
-		final_wave[i] = 0;
-	  }
-	float voltageFloat;
-	for (int i=0; i < 80; i++){
-		//for (int j = 0; j<SAMPLE_RATE; j++){}
-		voltageFloat = samples[(index+i)%80] * (1.0 / 4095.0);
-		plot_shifted_sinc(i*4-XMAX/2, voltageFloat);
-		
-	}
-	background();
-	for(int i=0; i<XMAX-1; i++){
-		draw_line(i, YMAX/2 - delete_wave[i], i+1, YMAX/2 - delete_wave[i+1], BLACK);
-		draw_line(i, YMAX/2 - final_wave[i], i+1, YMAX/2 - final_wave[i+1], WHITE);
-		delete_wave[i] = final_wave[i];
-		final_wave[i] = 0;
-
-	}
-		delete_wave[XMAX-1] = final_wave[XMAX-1];
-		final_wave[XMAX-1] = 0;
-        display_freq(0);
-        display_amplitude(0.0);
+void draw_graph(int samples[], int index, float amplitude, int freq) {
+  // CLEAR THE FINAL_WAVE ARRAY BEFORE PLOTTING NEW DATA
+  for (int i = 0; i < XMAX; i++) {
+    final_wave[i] = 0;
+  }
+  float voltageFloat;
+  for (int i = 0; i < 80; i++) {
+    // for (int j = 0; j<SAMPLE_RATE; j++){}
+    voltageFloat = samples[(index + i) % 80] * (1.0 / 4095.0);
+    plot_shifted_sinc(i * 4 - XMAX / 2, voltageFloat);
+  }
+  background();
+  for (int i = 0; i < XMAX - 1; i++) {
+    draw_line(i, YMAX / 2 - delete_wave[i], i + 1,
+              YMAX / 2 - delete_wave[i + 1], BLACK);
+    draw_line(i, YMAX / 2 - final_wave[i], i + 1, YMAX / 2 - final_wave[i + 1],
+              WHITE);
+    delete_wave[i] = final_wave[i];
+    final_wave[i] = 0;
+  }
+  delete_wave[XMAX - 1] = final_wave[XMAX - 1];
+  final_wave[XMAX - 1] = 0;
+  display_freq(0);
+  display_amplitude(0.0);
 }
-
 
 ////////////////// ACQUIRE CODE /////////////////////
 
@@ -498,6 +487,10 @@ void get_samples() {
   *(interval_timer_ptr) = 0;  // clear the interrupt
 
   raw_adc_samples[write_index] = (*ADC_ptr) & 0xFFF;
+
+  voltage_samples[write_index] =
+      raw_adc_samples[write_index] * REF_VOLTAGE /
+      4095.0;  // CONVERT TO VOLTAGE AND ADD TO VOLTAGE_SAMPLES LIST
   write_index = (write_index + 1) % ADC_BUFFER_SIZE;
 }
 
@@ -508,7 +501,8 @@ void pushbutton_ISR() {
   press = *(KEY_ptr + 3);  // read the pushbutton interrupt register
   *(KEY_ptr + 3) = press;  // clear the interrupt
   if (press & 0x1) {
-    SAMPLE_RATE = ((SAMPLE_RATE&(1<<30))==0) ? SAMPLE_RATE * 2 : SAMPLE_RATE;
+    SAMPLE_RATE =
+        ((SAMPLE_RATE & (1 << 30)) == 0) ? SAMPLE_RATE * 2 : SAMPLE_RATE;
     update_timer(SAMPLE_RATE);
   } else if (press & 0x2) {
     SAMPLE_RATE = (SAMPLE_RATE > 1) ? SAMPLE_RATE / 2 : SAMPLE_RATE;
@@ -521,9 +515,8 @@ void pushbutton_ISR() {
   return;
 }
 
-
-
 /////////// LOGIC FUNCTIONS //////////////////////
+
 // OSCILLOSCOPE LOGIC FUNCTIONS
 void trigger_function(int trigger_value) {
   // IF WE'RE ALREADY HOLDING A TRIGGERED WAVEFORM, KEEP DISPLAYING IT
@@ -542,7 +535,8 @@ void trigger_function(int trigger_value) {
 
   // Look for the first sample that meets or exceeds the trigger value
   for (int i = 0; i < 80; i++) {
-    if ((raw_adc_samples[i] >= trigger_value) &&(raw_adc_samples[(i+1)%80] <= trigger_value)) {
+    if ((raw_adc_samples[i] >= trigger_value) &&
+        (raw_adc_samples[(i + 1) % 80] <= trigger_value)) {
       trigger_found = true;
       trigger_index = i;
       break;
@@ -552,256 +546,80 @@ void trigger_function(int trigger_value) {
   if (trigger_found && trigger_mode_active) {
     // WE FOUND A TRIGGER POINT - PLOT 80 SAMPLES FROM TRIGGER INDEX
 
-	 draw_graph(raw_adc_samples, write_index, 1.0, 10);
+    draw_graph(raw_adc_samples, write_index, 1.0, 10);
     // SET HOLD MODE UNTIL USER CHANGES SOMETHING
     trigger_hold = true;
-  } else {/*
-    // NO TRIGGER FOUND, OR TRIGGER MODE NOT ACTIVE - PLOT NORMALLY
-    for (int i = 0; i < XMAX - 1; i++) {
-      draw_line(i, YMAX / 2 - delete_wave[i], i + 1,
-                YMAX / 2 - delete_wave[i + 1], BLACK);
-      if (i < XMAX - 1) {
-        draw_line(i, YMAX / 2 - final_wave[i], i + 1,
-                  YMAX / 2 - final_wave[i + 1], WHITE);
-      }
-    }*/
+  } else { /*
+     // NO TRIGGER FOUND, OR TRIGGER MODE NOT ACTIVE - PLOT NORMALLY
+     for (int i = 0; i < XMAX - 1; i++) {
+       draw_line(i, YMAX / 2 - delete_wave[i], i + 1,
+                 YMAX / 2 - delete_wave[i + 1], BLACK);
+       if (i < XMAX - 1) {
+         draw_line(i, YMAX / 2 - final_wave[i], i + 1,
+                   YMAX / 2 - final_wave[i + 1], WHITE);
+       }
+     }*/
   }
 }
-
-
-
-
-
 
 /////// MEASUREMENT FUNCTIONS ////////
 
-// FIND THE DC OFFSET
-float calc_dc_offset(const float* raw_adc_samples, int adc_sample_count) {
-  // find the average value (sum / count) to find out centre point of signal
-
-  if (adc_sample_count <= 0) return 0.0f;
-  double sum = 0.0;
-  for (int i = 0; i < adc_sample_count; i++) {
-    sum += raw_adc_samples[i];
-  }
-  return (float)(sum / adc_sample_count);
-}
-
-/* FIND RISING CROSSING
-rising crossing is when signal crosses the centre point (dc offset) */
-
-float find_rising_crossing(const float* raw_adc_samples, int adc_sample_count,
-                           float threshold, int start_index) {
-  // returns the first point where the signal crosses the threshold value (dc
-  // offset)
-  for (int i = start_index; i < adc_sample_count - 1; i++) {
-    if (raw_adc_samples[i] < threshold && raw_adc_samples[i + 1] >= threshold) {
-      float delta = raw_adc_samples[i + 1] - raw_adc_samples[i];
-      if (delta == 0) return i;  // Avoid division by zero
-      float fraction = (threshold - raw_adc_samples[i]) / delta;
-      return i + fraction;
-    }
-  }
-  return -1.0f;
-}
-
-// FIND FALLING CROSSING
-float find_falling_crossing(const float* raw_adc_samples, int adc_sample_count,
-                            float threshold, int start_index) {
-  for (int i = start_index; i < adc_sample_count - 1; i++) {
-    if (raw_adc_samples[i] >= threshold && raw_adc_samples[i + 1] < threshold) {
-      float delta = raw_adc_samples[i] - raw_adc_samples[i + 1];
-      if (delta == 0) return i;
-      float fraction = (raw_adc_samples[i] - threshold) / delta;
-      return i + fraction;
-    }
-  }
-  return -1.0f;
-}
-
-// MIN / MAX VALUES
-void find_min_max(const float* raw_adc_samples, int adc_sample_count,
-                  float* min_val, float* max_val) {
-  if (adc_sample_count <= 0) {  // no samples
-    *min_val = 0.0f;
-    *max_val = 0.0f;
-    return;
-  }
-
-  *min_val = raw_adc_samples[0];
-  *max_val = raw_adc_samples[0];
-
-  for (int i = 1; i < adc_sample_count; i++) {
-    if (raw_adc_samples[i] > *max_val) *max_val = raw_adc_samples[i];
-    if (raw_adc_samples[i] < *min_val) *min_val = raw_adc_samples[i];
+// WINDOWING FUNCTION NEEDED THAT SPLITS INTO CHUNKS OF 500
+void windowing_for_measurement() {
+  for (int i = 0; i < GOERTZEL_N; i++) {
+    windowed_samples[i] = voltage_samples[i] * window[i];
   }
 }
 
-float calc_vpp(const float* raw_adc_samples, int adc_sample_count) {
-  // vpp = max - min
-  if (adc_sample_count <= 0) return 0.0f;  // no samples
+void calc_freq(float* frequency) { process_goertzel(SAMPLE_RATE, frequency); }
 
-  float min_val, max_val;
-  find_min_max(raw_adc_samples, adc_sample_count, &min_val, &max_val);
-
-  return max_val - min_val;
-}
-
-// RMS VOLTAGE
-float calc_rms(const float* raw_adc_samples, int adc_sample_count,
-               float dc_offset) {
-  // Vrms = ((Vi^2) / count)^0.5 - WORKS FOR ALL NOT JUST SINE WAVES
-
-  if (adc_sample_count <= 0) return 0.0f;  // no samples
-
-  double sum_sq = 0.0;
-  for (int i = 0; i < adc_sample_count; i++) {
-    float ac = raw_adc_samples[i] - dc_offset;
-    sum_sq += ac * ac;
-  }
-  return (float)sqrt(sum_sq / adc_sample_count);
-  return 0;
-}
-
-float calc_frequency(int period_samples) {  // # of samples in 1 period
-  // f = 1 / T = 1 / (period samples / sampling rate)
-
-  if (period_samples <= 0) return 0.0f;              // no samples
-  float period_time = period_samples / SAMPLE_RATE;  // convert to sec
-  if (period_time > 0) {
-    return 1.0f / period_time;
-  } else {
-    return 0.0f;
+/* GET THE CONSTANT COEFFICIENTS FOR ALGORITHM coefficient[k] = 2cos(2pik/N)
+only do from 0 -> N/2 because dft is symmetric for real valued inputs */
+void get_coeff() {
+  for (int k = 0; k <= GOERTZEL_N / 2; k++) {
+    coeff[k] = 2.0f * cosf(2.0f * M_PI * (float)k / (float)GOERTZEL_N);
   }
 }
 
-/* RISE AND FALL TIME
-rise = 10% - 90% of amplitude
-fall = 90% - 10% of amplitude */
-
-void calc_rise_fall_time(const float* raw_adc_samples, int adc_sample_count,
-                         float* rise_time, float* fall_time) {
-  if (adc_sample_count <= 0) {  // NO SAMPLES
-    *rise_time = 0.0f;
-    *fall_time = 0.0f;
-    return;
-  }
-
-  // FIND MIN / MAX VALUES
-  float min_val, max_val;
-  find_min_max(raw_adc_samples, adc_sample_count, &min_val, &max_val);
-
-  float amplitude = max_val - min_val;
-  float threshold_low = min_val + 0.1f * amplitude;
-  float threshold_high = min_val + 0.9f * amplitude;
-
-  // FIND RISE TIME - find first time where crosses low threshold then when it
-  // crosses high threshold and subtract
-  float rise_start =
-      find_rising_crossing(raw_adc_samples, adc_sample_count, threshold_low, 0);
-  float rise_end = -1.0f;
-  if (rise_start != -1) {
-    rise_end = find_rising_crossing(raw_adc_samples, adc_sample_count,
-                                    threshold_high, (int)rise_start);
-  }
-  if (rise_start != -1 && rise_end != -1) {
-    *rise_time = (rise_end - rise_start) / SAMPLE_RATE;
-  } else {
-    *rise_time = 0.0f;
-  }
-
-  /* FIND FALL TIME - find first time where crosses high threshold then when it
-  crosses low threshold and subtract only start AFTER PEAK */
-
-  float fall_start = find_falling_crossing(raw_adc_samples, adc_sample_count,
-                                           threshold_high, 0);
-  float fall_end = -1.0f;
-  if (fall_start != -1) {
-    fall_end = find_falling_crossing(raw_adc_samples, adc_sample_count,
-                                     threshold_low, (int)fall_start);
-  }
-  if (fall_start != -1 && fall_end != -1 && fall_end > fall_start) {
-    *fall_time = (fall_end - fall_start) / SAMPLE_RATE;
-  } else {
-    *fall_time = 0.0f;
+/* GET THE HAMMING WINDOW COEFFICIENTS FOR A BLOCK
+window[n] = 0.54 - 0.46cos(2pin / (N-1))
+goal is to basically taper the bin rather than sharp output so no spectral
+leaking
+ */
+void get_window() {
+  for (int n = 0; n < GOERTZEL_N; n++) {
+    window[n] = 0.54f - 0.46f * cosf(2.0f * M_PI * n / (GOERTZEL_N - 1));
   }
 }
 
+void process_goertzel(int sample_rate, float* frequency) {
+  float max_magnitude_sq = 0.0f;
+  int max_k = 0;
+  /* loop over each freq bin frm n=0 to N-1 */
+  for (int k = 1; k <= GOERTZEL_N / 2; k++) {
+    float q0, q1 = 0.0f, q2 = 0.0f;
+    float coeff_k = coeff[k];
 
+    /* finds RECURRENCE q(n) = windowed_samples[n] + coeff[k] * q(n-1) - q(n-2)
+    q1 / q2 = n-1 and n-2 btw */
+    for (int n = 0; n < GOERTZEL_N; n++) {
+      q0 = coeff_k * q1 - q2 + windowed_samples[n];
 
-
-
-
-
-//////////////////////// ANYTHING BELOW THIS IS NOT UPDATED
-/////////////////////////////////////
-/*
-unsigned int buffer_get(void) {  // READ SAMPLE
-  if (write_index == read_index) {
-    return 0;  // empty buffer
-  }
-
-  unsigned int sample = raw_adc_samples[read_index];
-  read_index++;
-  if (read_index >= ADC_BUFFER_SIZE) read_index = 0;
-  return sample;
-}
-
-// PROCESS SAMPLES IN CHUNKS (rather than processing individually)
-#define CHUNK_SIZE 80
-
-void process_available_samples(void) {
-  int available_raw_adc_samples;
-
-  while (1) {
-    // how many samples are there?
-    if (write_index >= read_index) {
-      available_raw_adc_samples = write_index - read_index;
-    } else {
-      available_raw_adc_samples = ADC_BUFFER_SIZE - read_index + write_index;
+      // SHIFT
+      q2 = q1;
+      q1 = q0;
     }
 
-    if (available_raw_adc_samples <= 0)  // if none break
-      break;
+    // find power aka mangitude squared: |X[k]|^2 = q1^2 + q2^2 - coeff[k] * q1
+    // * q2
+    float magnitude_sq = q1 * q1 + q2 * q2 - q1 * q2 * coeff_k;
 
-    // GET MAX SIZE TO READ
-    int samples_to_read;
-    if (available_raw_adc_samples > CHUNK_SIZE) {
-      samples_to_read = CHUNK_SIZE;
-    } else {
-      samples_to_read = available_raw_adc_samples;
-    }
-
-    // CONVERT VALUES TO VOTLAGE INSTEAD OF RAW ADC VALUES
-    for (int i = 0; i < samples_to_read; i++) {
-      unsigned int raw_sample = buffer_get();
-
-      float voltage = (raw_sample / 4095.0f) * REF_VOLTAGE;
-      raw_adc_samples[adc_sample_count++] = voltage;
-    }
-
-    // DIVIDE AND SEND IN CHUNKS
-    while (adc_sample_count >= CHUNK_SIZE) {
-      // first chunk
-      buffer_to_measurements();
-
-      // shift and send
-      int remaining = adc_sample_count - CHUNK_SIZE;
-      for (int j = 0; j < remaining; j++) {
-        raw_adc_samples[j] = raw_adc_samples[j + CHUNK_SIZE];
-      }
-      adc_sample_count = remaining;
+    if (magnitude_sq > max_magnitude_sq) {  // IS IT MAX POWER FOUND SO FAR? if
+                                            // y then freq found
+      max_magnitude_sq = magnitude_sq;
+      max_k = k;
     }
   }
 
-  // IF ANY MORE FULL CHUNKS SEND
-  while (adc_sample_count >= CHUNK_SIZE) {
-    buffer_to_measurements();
-
-    int remaining = adc_sample_count - CHUNK_SIZE;
-    for (int j = 0; j < remaining; j++) {
-      raw_adc_samples[j] = raw_adc_samples[j + CHUNK_SIZE];
-    }
-    adc_sample_count = remaining;
-  }
-}*/ 
+  *frequency = (max_k * sample_rate) / (float)GOERTZEL_N;
+}
