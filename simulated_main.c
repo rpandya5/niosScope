@@ -1,7 +1,4 @@
-/* UPDATED AS OF 10:31 PM
-ADC , INPUTS , ISRS
-MEASUREMENTS
-DRAWINGS*/
+// SQUARE WAVE RN
 
 #include <math.h>
 #include <stdbool.h>
