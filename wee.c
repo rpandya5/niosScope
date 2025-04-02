@@ -33,7 +33,7 @@ bool trigger_hold = false;
 
 volatile int raw_adc_samples[ADC_BUFFER_SIZE];
 float voltage_samples[ADC_BUFFER_SIZE];
-volatile int SAMPLE_RATE = 60000;  // THE LTC2308 HAS max 500kHz freq
+volatile int SAMPLE_RATE = 6000000;  // THE LTC2308 HAS max 500kHz freq
 
 // ALL FUNCTION PROTOTYPES
 
@@ -220,7 +220,7 @@ int points[321][2] = {
 };
 
 // measurements
-#define GOERTZEL_N 60                        // N - number of total bins
+#define GOERTZEL_N 10                        // N - number of total bins
 #define BIN_WIDTH (SAMPLE_RATE / GOERTZEL_N)  // 1 khz per bin
 
 static float windowed_samples[GOERTZEL_N];  // input signal after widnwoing
@@ -259,7 +259,7 @@ volatile bool sampling = false;
 void display_dc_offset();
 
 int main(void) {
-  update_timer(SAMPLE_RATE);
+  //update_timer(SAMPLE_RATE);
   *(KEY_ptr + 2) = 0xF;  // write to the pushbutton interrupt mask register
   __builtin_wrctl(3, 0b11);
   __builtin_wrctl(0, 1);  // enable Nios II interrupts
@@ -272,16 +272,26 @@ int main(void) {
   // MEASUREMENT SETUP
   get_window();
   get_coeff();
-
+  int dead_points[ADC_BUFFER_SIZE] ={0};
   while (1) {
     // Add a visual indicator that the code is running
     *LEDS = 0xF;
 
-    sampling = true;
+    sampling = false;
     
     produce_points();
     //draw_graph(raw_adc_samples, 0, 1.0, 10);
     *LEDS = 0x0;
+    
+    /*for (int i=0; i<ADC_BUFFER_SIZE; i++){
+      plot_point(i*4, dead_points[i], 0);
+      plot_point(i*4, raw_adc_samples[i]*50.0/4095.0, WHITE);
+      dead_points[i] =raw_adc_samples[i]*50.0/4095.0;
+
+
+    }*/
+    
+    //draw_graph(raw_adc_samples, write_index, 1.0, 10);
     // TRIGGER FUNCTION HANDLES DRAWING BASED ON STATE
     trigger_function(TRIGGER);
 
@@ -289,6 +299,7 @@ int main(void) {
     windowing_for_measurement();
     calc_freq_period(&frequency);
     calc_amplitude();
+    calc_dc_offset();
 
     display_freq();
     display_amplitude();
@@ -506,15 +517,17 @@ void draw_graph(volatile int samples[], int index, float amplitude, int freq) {
     final_wave[i] = 0;
   }
   float voltageFloat;
-  for (int i = index; i < 80; i++) {
+  for (int i = index; i < ADC_BUFFER_SIZE; i++) {
     // for (int j = 0; j<SAMPLE_RATE; j++){}
     voltageFloat = samples[i] * (1.0 / 4095.0);
-    plot_shifted_sinc(i * 4 - XMAX / 2, voltageFloat);
+    plot_shifted_sinc((i-index) * 4 - XMAX / 2, voltageFloat);
   }
-  background();
+
   for (int i = 0; i < XMAX - 1; i++) {
     draw_line(i, YMAX / 2 - delete_wave[i], i + 1,
-              YMAX / 2 - delete_wave[i + 1], BLACK);
+              YMAX / 2 - delete_wave[i + 1], BLACK);}
+    background();
+  for (int i = 0; i < XMAX - 1; i++) {
     draw_line(i, YMAX / 2 - final_wave[i], i + 1, YMAX / 2 - final_wave[i + 1],
               WHITE);
     delete_wave[i] = final_wave[i];
@@ -548,15 +561,29 @@ void interrupt_handler(void) {
 }
 
 void produce_points(){
-  update_timer(SAMPLE_RATE);
-  while(sampling){}//*LEDS = sampling;}
+  //update_timer(SAMPLE_RATE);
+  //while(sampling){}//*LEDS = sampling;}
+  *(interval_timer_ptr + 0x2) = (SAMPLE_RATE & 0xFFFF);
+  *(interval_timer_ptr + 0x3) = (SAMPLE_RATE >> 16) & 0xFFFF;
+  while(write_index < ADC_BUFFER_SIZE){
+      *(interval_timer_ptr + 1) = 0b0100;  // STOP = 0, START = 1, CONT = 1, ITO = 1
+      while(((*interval_timer_ptr)&0b1) == 0){
+      }
+      
+      
+      raw_adc_samples[write_index] = (*ADC_ptr) & 0xFFF;
+      voltage_samples[write_index] =
+          raw_adc_samples[write_index] * REF_VOLTAGE / 4095.0;  // CONVERT TO VOLTAGE AND ADD TO VOLTAGE_SAMPLES LIST
+      write_index++;
+  }
+  write_index = 0;
 
 }
 
 void get_samples() {
   //interval_timer_ptr = (int*)0xFF202000;
     if (sampling){
-      while(((*ADC_ptr)&(1<<15))==1){}
+      //while(((*ADC_ptr)&(1<<15))==1){}
     raw_adc_samples[write_index] = (*ADC_ptr) & 0xFFF;
 
     voltage_samples[write_index] =
@@ -604,10 +631,9 @@ void trigger_function(int trigger_value) {
   int trigger_index = -1;
 
   // Look for the first sample that meets or exceeds the trigger value
-  for (int i = 0; i < 80; i++) {
-    if (((raw_adc_samples[i] >= trigger_adc_value) &&
-        (raw_adc_samples[(i + 1) % 80] <= trigger_adc_value))||((raw_adc_samples[i] <= trigger_adc_value) &&
-        (raw_adc_samples[(i + 1) % 80] >= trigger_adc_value))) {
+  for (int i = 0; i < ADC_BUFFER_SIZE-1; i++) {
+    if ((raw_adc_samples[i] >= trigger_adc_value) &&
+        (raw_adc_samples[i + 1] <= trigger_adc_value)) {
       trigger_found = true;
       trigger_index = i;
       break;
@@ -622,7 +648,7 @@ void trigger_function(int trigger_value) {
     trigger_hold = true;
   } else {
     // NO TRIGGER FOUND, OR TRIGGER MODE NOT ACTIVE - STILL DRAW SOMETHING
-    draw_graph(raw_adc_samples, write_index, 1.0, 10);
+    //draw_graph(raw_adc_samples, write_index, 1.0, 10);
   }
 }
 
@@ -680,7 +706,7 @@ void process_goertzel(int sample_rate, float* frequency) {
   int max_k = 0;
   /* loop over each freq bin frm n=0 to N-1 */
   for (int k = 1; k <= GOERTZEL_N / 2; k++) {
-    float q0, q1 = 1.0f, q2 = 1.0f;
+    float q0, q1 = 0.0f, q2 = 0.0f;
     float coeff_k = coeff[k];
 
     /* finds RECURRENCE q(n) = windowed_samples[n] + coeff[k] * q(n-1) - q(n-2)
@@ -711,6 +737,10 @@ void process_goertzel(int sample_rate, float* frequency) {
 void calc_dc_offset() {
   // Find the average value (sum / count) to determine the center point of the
   // signal
+  dc_offset = maximum_value - amplitude;
+  return;
+
+
   if (period <= 0.0f) {
     dc_offset = 0.0f;
     return;
