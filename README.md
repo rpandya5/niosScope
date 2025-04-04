@@ -89,7 +89,7 @@ Using the frequency from Goertzel, we derive:
 ## File Structure
 
 ```
-old_arduino_builds/
+niosScope/
 ├── fully_integrated_main.c  # Entire implementation in one file
 ├── simulated_main.c  # Optimized version for CPUlator simulation  
 │
