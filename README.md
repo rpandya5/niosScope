@@ -18,7 +18,7 @@ Demo on CPULator:
   </table>
 </div>
 
-Full demonstration on De1-Soc Board
+Full demonstration on De1-Soc Board (click to see the video!!)
 <div style="text-align: center;">
   <a href="https://youtu.be/HqvTaowTBj0">
     <img src="https://img.youtube.com/vi/HqvTaowTBj0/maxresdefault.jpg" width="800" />
