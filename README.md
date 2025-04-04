@@ -1,15 +1,29 @@
-# FPGA-Based Oscilloscope on the DE1-SoC
-
 We've created a complete oscilloscope implementation on the **DE1-SoC FPGA board (Revision F)** running **Nios II**. Our oscilloscope captures analog inputs through the onboard **LTC2308 ADC** and processes them to provide real-time waveform display and measurements, including **frequency, amplitude, and DC offset**. The system features **trigger functionality** for stable waveform capture and uses **advanced signal processing techniques** to ensure accurate measurements.
 
 Demo on CPULator:
-<div style="display: flex; justify-content: center; gap: 10px;">
-    <img src=images/"With_trigger.png" alt="Static Image" width="45%">
-    <img src=images/"withouttrigger.gif" alt="GIF Animation" width="45%">
+<div align="center">
+  <table>
+    <tr>
+      <td align="center" width="50%">
+          <img src="images/With_trigger.png" alt="Image without trigger" width="100%">
+        <br>
+        <em>Square wave w trigger</em>
+      </td>
+      <td align="center" width="50%">
+        <img src="images/withouttrigger.gif" alt="Image with trigger" width="100%">
+        <br>
+        <em>Square wave w/o trigger</em>
+      </td>
+    </tr>
+  </table>
 </div>
-Left image (without trigger) | Right image (with trigger)
-Full demonstration on De1-Soc Board - https://youtu.be/HqvTaowTBj0
 
+Full demonstration on De1-Soc Board
+<div style="text-align: center;">
+  <a href="https://youtu.be/HqvTaowTBj0">
+    <img src="https://img.youtube.com/vi/HqvTaowTBj0/maxresdefault.jpg" width="800" />
+  </a>
+</div>
 
 
 ---
@@ -17,6 +31,8 @@ Full demonstration on De1-Soc Board - https://youtu.be/HqvTaowTBj0
 ## System Architecture
 
 Our oscilloscope system consists of several interconnected subsystems that handle different aspects of signal acquisition, processing, and display:
+
+<img src="images/block.jpeg" width="800" />
 
 ### Signal Acquisition System
 
