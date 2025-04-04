@@ -7,12 +7,12 @@ Demo on CPULator:
       <td align="center" width="50%">
           <img src="images/With_trigger.png" alt="Image without trigger" width="100%">
         <br>
-        <em>Square wave w trigger</em>
+        <em>Square wave w trigger in range</em>
       </td>
       <td align="center" width="50%">
         <img src="images/withouttrigger.gif" alt="Image with trigger" width="100%">
         <br>
-        <em>Square wave w/o trigger</em>
+        <em>Square wave w trigger out of range</em>
       </td>
     </tr>
   </table>
