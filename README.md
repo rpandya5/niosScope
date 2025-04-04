@@ -159,5 +159,5 @@ old_arduino_builds/
 
 ## Team
 
-This project was developed by [Richa Pandya](richapandya.com) and [Robert Saab](https://www.linkedin.com/in/robert-saab/) as part of our final project for ECE243 at the University of Toronto.
+This project was developed by [Richa Pandya](richapandya.com) and [Robert Saab](https://www.linkedin.com/in/robert-saab/) as part of our final project for ECE243 at the University of Toronto. The code and documentation are provided for reference only and are not licensed for use, modification, or distribution. All rights reserved.
 
